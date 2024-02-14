@@ -12,6 +12,13 @@ We will represent the world as a discrete numpy grid where:
 
 An object position on the factory floor is represented by the tuple (x,y).    
 
+We also need to define our state space for our Q values. Note that the bigger our environment and greater load
+that our agent(s) and stations can take will massively increase the size of the state-space.
+We will pursue with this for now but it suggests that a more sophisticated method such as DQN might be necessary.
+The state will be a list: [agentPosition, agentLoad, stationLoads]
+Consequently, the state-space will be a list of these dictionaries.
+How many possible states? : no.free_spaces*(agent_max+1)*Product(station_max+1)
+
 '''
 
 import numpy as np
@@ -40,10 +47,11 @@ class Station:
 
 class Agent:
 
-    def __init__(self,load,maximum,position):
+    def __init__(self,load,maximum,position,name="Agent"):
         self.load = load
         self.maximum = maximum
         self.position = position
+        self.name = name
     
     def getLoad(self):
         return self.load
@@ -64,10 +72,17 @@ class Factory:
         self.height = height
         self.width = width
         self.grid = np.zeros((width,height))
+        self.stateSpace = [] # Does not include terminal states
+        self.stateSpacePlus = [] # Does include terminal states
+        self.stations = listOfStations
+        self.noStations = len(listOfStations)
+        self.deposit = deposit
+        self.obstacles = listOfObstacles
         self.addAgent(agent)
-        self.addDeposit(deposit)
-        self.addObstacles(listOfObstacles)
-        self.addStations(listOfStations)
+        self.addDeposit()
+        self.addObstacles()
+        self.addStations()
+        self.createStateSpace(agent)
         print(self.grid)
     
 
@@ -75,26 +90,70 @@ class Factory:
         positionX, positionY = agent.position
         self.grid[positionX][positionY] = 1
 
-    def addDeposit(self,deposit):
-        positionX, positionY = deposit
+    def addDeposit(self):
+        positionX, positionY = self.deposit
         self.grid[positionX][positionY] = 2
     
-    def addObstacles(self,obstacles):
-        for obstacle in obstacles:
+    def addObstacles(self):
+        for obstacle in self.obstacles:
             positionX, positionY = obstacle
             self.grid[positionX][positionY] = 3
 
-    def addStations(self,stations):
+    def addStations(self):
         index = 4
-        for station in stations:
+        for station in self.stations:
+            station.id = index
             positionX, positionY = station.position
             self.grid[positionX][positionY] = index
             index += 1
 
+    def createStateSpace(self, agent):
+
+        #Lets first create a list of variations for the stations loads:
+        stationMaxLoads = [station.maximum for station in self.stations]
+        stationLoadVariations = generate_variations(stationMaxLoads)
+
+        rowIndex = 0
+        for row in self.grid:
+            columnIndex = 0
+            for column in row:
+                if column == 0 or column == 1:
+                    for posAgentLoad in range(agent.maximum + 1):
+                        for option in stationLoadVariations:
+                            state = [(rowIndex,columnIndex),posAgentLoad] + option
+                            self.stateSpacePlus.append(state)
+                            if not(not any(option) and posAgentLoad == 0):
+                                self.stateSpace.append(state)
+
+                columnIndex+=1
+            rowIndex+=1
+
+
+# This function helps with generating the variations of station loads (made by ChatGPT)
+def generate_variations(lst):
+    variations = set()
+
+    # Helper function to recursively generate variations
+    def generate_helper(current_lst):
+        # Add the current list to variations
+        variations.add(tuple(current_lst))
+
+        # Iterate through the list elements
+        for i in range(len(current_lst)):
+            # If the element is greater than 0, decrement it and generate variations
+            if current_lst[i] > 0:
+                current_lst[i] -= 1
+                generate_helper(current_lst)
+                current_lst[i] += 1  # backtrack
+
+    generate_helper(lst)
+    return [list(variation) for variation in variations]
+
+
 
 myObstacles = [(2,1)]
-station1 = Station(2,5,(0,1))
-station2 = Station(1,3,(0,2))
+station1 = Station(2,3,(0,1))
+station2 = Station(1,1,(0,2))
 myStations = [station1,station2]
 myAgent = Agent(0,2,(3,0))
 deposit = (3,2)

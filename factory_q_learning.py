@@ -27,6 +27,8 @@ This assumption can be enforced by further discretising the factory floor if nee
 
 import numpy as np
 import copy
+import random
+from matplotlib import pyplot as plt
 
 class Station:
 
@@ -128,7 +130,7 @@ class Factory:
                 if column == 0 or column == 1:
                     for posAgentLoad in range(agent.maximum + 1):
                         for option in stationLoadVariations:
-                            state = [(rowIndex,columnIndex),posAgentLoad] + option
+                            state = tuple([(rowIndex,columnIndex),posAgentLoad] + option)
                             self.stateSpacePlus.append(state)
                             if not(not any(option) and posAgentLoad == 0):
                                 self.stateSpace.append(state)
@@ -141,7 +143,7 @@ class Factory:
 
     def getState(self):
         stationLoads = [stationLoad.load for stationLoad in self.stations]
-        return [self.agent.position, self.agent.load] + stationLoads
+        return tuple([self.agent.position, self.agent.load] + stationLoads)
 
     def setState(self,state):
         # This function needs to update the grid and the state
@@ -155,6 +157,11 @@ class Factory:
         
         #Update the grid:
         self.addAgent()
+
+    def randomAction(self):
+        numberActions = len(self.possibleActions)
+        randomInteger = random.randint(0,numberActions)
+        return self.possibleActions[randomInteger-1]
 
     def action(self,action):
         if action == "Up":
@@ -174,19 +181,19 @@ class Factory:
         currentX, currentY = self.agent.position
         if key == 0:
             newX = currentX - 1
-            return [(newX,currentY),self.agent.load] + [stationLoad.load for stationLoad in self.stations]
+            return tuple([(newX,currentY),self.agent.load] + [stationLoad.load for stationLoad in self.stations])
 
         elif key == 1:
             newY = currentY + 1
-            return [(currentX,newY),self.agent.load] + [stationLoad.load for stationLoad in self.stations]
+            return tuple([(currentX,newY),self.agent.load] + [stationLoad.load for stationLoad in self.stations])
         
         elif key == 2:
             newX = currentX + 1
-            return [(newX,currentY),self.agent.load] + [stationLoad.load for stationLoad in self.stations]
+            return tuple([(newX,currentY),self.agent.load] + [stationLoad.load for stationLoad in self.stations])
         
         elif key == 3:
             newY = currentY - 1
-            return [(currentX,newY),self.agent.load] + [stationLoad.load for stationLoad in self.stations]            
+            return tuple([(currentX,newY),self.agent.load] + [stationLoad.load for stationLoad in self.stations])            
 
     def load(self):
         currentAgentPosition = self.agent.position
@@ -201,10 +208,10 @@ class Factory:
                 newAgentLoad = currentAgentLoad + 1
                 newStationLoad = currentStationLoads[i] - 1
                 newStationLoads = currentStationLoads[:i] + [newStationLoad] + currentStationLoads[i+1:]
-                return [currentAgentPosition, newAgentLoad] + newStationLoads
+                return tuple([currentAgentPosition, newAgentLoad] + newStationLoads)
             i+=1
         
-        return [currentAgentPosition, currentAgentLoad] + currentStationLoads
+        return tuple([currentAgentPosition, currentAgentLoad] + currentStationLoads)
                 
 
     def unload(self):
@@ -214,7 +221,7 @@ class Factory:
         currentStationLoads = [station.load for station in self.stations]
 
         if manhattenDistance(currentAgentPosition,self.deposit) == 1:
-            return [currentAgentPosition, currentAgentLoad-1] + currentStationLoads
+            return tuple([currentAgentPosition, currentAgentLoad-1] + currentStationLoads)
 
         # Now figure out which station is the agent next to
         i = 0
@@ -223,10 +230,10 @@ class Factory:
                 newAgentLoad = currentAgentLoad - 1
                 newStationLoad = currentStationLoads[i] + 1
                 newStationLoads = currentStationLoads[:i] + [newStationLoad] + currentStationLoads[i+1:]
-                return [currentAgentPosition, newAgentLoad] + newStationLoads
+                return tuple([currentAgentPosition, newAgentLoad] + newStationLoads)
             i+=1
         
-        return [currentAgentPosition, currentAgentLoad] + currentStationLoads        
+        return tuple([currentAgentPosition, currentAgentLoad] + currentStationLoads)        
 
 
     def illegalState(self,newState):
@@ -286,17 +293,65 @@ def manhattenDistance(pos1,pos2):
     x2, y2 = pos2
     return abs(x2-x1) + abs(y2-y1)
 
+def bestAction(factory,q_values):
+    state = factory.getState()
+    values = np.array([q_values[state,action] for action in factory.possibleActions])
+    best = np.argmax(values)
+    return factory.possibleActions[best]
+
+
+# Instantiate the environment:
 myObstacles = [(2,1)]
 station1 = Station(2,3,(0,1))
 station2 = Station(1,1,(0,2))
 myStations = [station1,station2]
-myAgent = Agent(0,2,(3,0))
+myAgent = Agent(1,2,(3,0))
 deposit = (3,2)
 myFactory = Factory(3,4,myObstacles,myStations,myAgent,deposit)
-myFactory.step("Up")
-myFactory.step("Up")
-myFactory.step("Right")
-myFactory.step("Load")
-print(myFactory.getState())
-print(myFactory.grid)
-myFactory.reset()
+
+# Set the hyperparameters:
+ALPHA = 0.1
+GAMMA = 1
+EPSILON = 1
+
+# Create the Q table:
+Q = {}
+
+for state in myFactory.stateSpacePlus:
+    for action in myFactory.possibleActions:
+        Q[state,action] = 0
+
+numberEpisodes = 5000
+totalReward = np.zeros(numberEpisodes)
+
+for i in range(numberEpisodes):
+    episodeReward = 0
+    doneFlag = False
+    myFactory.reset()
+    actionList = []
+    while not doneFlag:
+        randNum = random.random()
+        if randNum < EPSILON:
+            action = myFactory.randomAction()
+        else:
+            action = bestAction(myFactory,Q)
+        #print(action)
+        actionList.append(action)
+        oldState = myFactory.getState()
+        newState, reward, doneFlag = myFactory.step(action)
+        episodeReward += reward
+        updatedAction = bestAction(myFactory,Q)
+
+        #Update Q values:
+        Q[oldState,action] = Q[oldState,action] + ALPHA*(reward + GAMMA*Q[newState,updatedAction])
+    if i%100 == 0:
+        print("Episode ", i)
+        print("Epsilon:", EPSILON)
+        print("Reward: ", episodeReward)
+        if episodeReward>-30:
+            print("Actions: ", actionList)
+        EPSILON = EPSILON*0.95
+    totalReward[i] = episodeReward
+
+plt.plot(totalReward)
+plt.show()

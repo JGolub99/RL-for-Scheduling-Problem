@@ -26,6 +26,7 @@ This assumption can be enforced by further discretising the factory floor if nee
 '''
 
 import numpy as np
+import copy
 
 class Station:
 
@@ -75,27 +76,17 @@ class Factory:
     def __init__(self, height, width, listOfObstacles, listOfStations, agent, deposit):
         self.height = height
         self.width = width
-        self.grid = np.zeros((width,height))
         self.stateSpace = [] # Does not include terminal states
         self.stateSpacePlus = [] # Does include terminal 
 
-        # These are state variables that need to be updates with each step
-        self.agent = agent
-        self.stations = listOfStations
-        self.noStations = len(listOfStations)
+        self.initialAgent = agent
+        self.initialStations = listOfStations
 
         self.deposit = deposit
         self.obstacles = listOfObstacles
 
-        # These members build the grid
-        self.addAgent()
-        self.addDeposit()
-        self.addObstacles()
-        self.addStations()
-
+        self.reset()
         self.createStateSpace(agent)
-        print(self.grid)
-        print("Initial state: ", self.getState())
         self.possibleActions = ["Up", "Right", "Down", "Left", "Load", "Unload"]
     
 
@@ -257,6 +248,18 @@ class Factory:
             reward = -1
 
         return newState, reward, self.isTerminalState(newState) 
+    
+    def reset(self):
+        # In this function we need to rebuld the grid and initial state:
+        self.agent = copy.deepcopy(self.initialAgent)
+        self.stations = copy.deepcopy(self.initialStations)
+        self.grid = np.zeros((self.width,self.height))
+        self.addAgent()
+        self.addDeposit()
+        self.addObstacles()
+        self.addStations()
+
+
 
 # This function helps with generating the variations of station loads (made by ChatGPT)
 def generate_variations(lst):
@@ -296,3 +299,4 @@ myFactory.step("Right")
 myFactory.step("Load")
 print(myFactory.getState())
 print(myFactory.grid)
+myFactory.reset()

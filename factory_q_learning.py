@@ -73,22 +73,35 @@ class Factory:
         self.width = width
         self.grid = np.zeros((width,height))
         self.stateSpace = [] # Does not include terminal states
-        self.stateSpacePlus = [] # Does include terminal states
+        self.stateSpacePlus = [] # Does include terminal 
+
+        # These are state variables that need to be updates with each step
+        self.agent = agent
         self.stations = listOfStations
         self.noStations = len(listOfStations)
+
         self.deposit = deposit
         self.obstacles = listOfObstacles
-        self.addAgent(agent)
+
+        # These members build the grid
+        self.addAgent()
         self.addDeposit()
         self.addObstacles()
         self.addStations()
+
         self.createStateSpace(agent)
         print(self.grid)
+        #self.actionSpace = {"Up":self.move(0), }
+        self.possibleActions = ["Up", "Down", "Left", "Right", "Load", "Unload"]
     
 
-    def addAgent(self,agent):
-        positionX, positionY = agent.position
+    def addAgent(self):
+        positionX, positionY = self.agent.position
         self.grid[positionX][positionY] = 1
+    
+    def removeAgent(self):
+        positionX, positionY = self.agent.position
+        self.grid[positionX][positionY] = 0
 
     def addDeposit(self):
         positionX, positionY = self.deposit
@@ -127,7 +140,26 @@ class Factory:
 
                 columnIndex+=1
             rowIndex+=1
+        
+    def isTerminalState(self,state):
+        return state in self.stateSpacePlus and state not in self.stateSpace
 
+    def getState(self):
+        stationLoads = [stationLoad.load for stationLoad in self.stations]
+        return [self.agent.position, self.agent.load] + stationLoads
+
+    def setState(self,state):
+        # This function needs to update the grid and the state
+        self.removeAgent()
+        self.agent.position = state[0]
+        self.agent.load = state[1]
+        i = 0
+        for station in self.stations:
+            station.load = state[i+1]
+            i+=1
+        
+        #Update the grid:
+        self.addAgent()
 
 # This function helps with generating the variations of station loads (made by ChatGPT)
 def generate_variations(lst):

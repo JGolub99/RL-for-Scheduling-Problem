@@ -30,3 +30,11 @@ def bestAction(factory,q_values):
     values = np.array([q_values[state,action] for action in factory.possibleActions])
     best = np.argmax(values)
     return factory.possibleActions[best]
+
+def bestActionDouble(factory,q_values1,q_values2):
+    state = factory.getState()
+    values1 = np.array([q_values1[state,action] for action in factory.possibleActions])
+    values2 = np.array([q_values2[state,action] for action in factory.possibleActions])
+    values = np.add(values1,values2)
+    best = np.argmax(values)
+    return factory.possibleActions[best]

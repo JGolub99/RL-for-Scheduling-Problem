@@ -20,6 +20,18 @@ def generate_variations(lst):
     generate_helper(lst)
     return [list(variation) for variation in variations]
 
+# This one takes in a tuple and returns a flattened list (ChatGPT)
+def flatten_tuple(input_tuple):
+    result = []
+
+    for item in input_tuple:
+        if isinstance(item, tuple):
+            result.extend(flatten_tuple(item))
+        else:
+            result.append(item)
+
+    return result
+
 def manhattenDistance(pos1,pos2):
     x1, y1 = pos1
     x2, y2 = pos2
@@ -38,3 +50,11 @@ def bestActionDouble(factory,q_values1,q_values2):
     values = np.add(values1,values2)
     best = np.argmax(values)
     return factory.possibleActions[best]
+
+def get_index(element,myList):
+   
+    index = 0
+    for item in myList:
+        if item == element:
+            return index
+        index+=1

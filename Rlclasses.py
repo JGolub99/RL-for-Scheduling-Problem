@@ -27,11 +27,24 @@ class Station:
 
 class Agent:
 
-    def __init__(self,load,maximum,position,name="Agent"):
+    def __init__(self,load,maximum,position,name="Agent",maxMem = 5000):
         self.load = load
         self.maximum = maximum
         self.position = position
         self.name = name
+        self.steps = 0
+        self.learn_step_counter = 0
+        self.memory = []
+        self.memCntr = 0
+        self.maxMem = maxMem
+
+    def storeTransition(self, oldState, action, reward, newState):
+        if self.memCntr < self.maxMem:
+            self.memory.append([oldState,action,reward,newState])
+        else:
+            #print(self.memory[self.memCntr%self.maxMem], "replace with ", [oldState, action, reward, newState])
+            self.memory[self.memCntr%self.maxMem] = [oldState, action, reward, newState]
+        self.memCntr+=1
     
     def getLoad(self):
         return self.load

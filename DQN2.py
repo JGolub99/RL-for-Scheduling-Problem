@@ -23,7 +23,7 @@ class QNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_space1,hidden_space2)
         self.fc3 = nn.Linear(hidden_space2,output_space)
 
-        self.optimizer = optim.RMSprop(self.parameters(), lr = alpha)
+        self.optimizer = optim.AdamW(self.parameters(), lr = alpha)
         self.loss = nn.MSELoss()
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
@@ -36,30 +36,35 @@ class QNetwork(nn.Module):
 
         return actions
 
-def learn(agent,qNetwork,factory,batchsize,gamma):
+def learn(agent,qNetwork,qNext,factory,batchsize,gamma, replace):
     qNetwork.optimizer.zero_grad()
     
+    if replace:
+        qNext.load_state_dict(qNetwork.state_dict())
+
     # Randomly select the batch of data
 
-    if agent.memCntr + batchsize < agent.maxMem:
-        memStart = int(np.random.choice(range(agent.memCntr)))
+    if agent.memCntr < batchsize:
+        miniBatch = agent.memory
     else:
-        memStart = int(np.random.choice(range(agent.maxMem-batchsize-1)))
+        miniBatch = random.sample(agent.memory,batchsize)
         #print(memStart)
-    miniBatch = agent.memory[memStart:memStart+batchsize]
     #print("Batch: ", len(miniBatch))
     memory = []
+    nextMemory = []
     QTarget = []
     actions = []
     for item in miniBatch:
         memory.append(help.flatten_tuple(item[0]))
+        nextMemory.append(help.flatten_tuple(item[3]))
         actions.append(help.get_index(item[1],factory.possibleActions))
         if factory.isTerminalState(item[3]):
             QTarget.append(item[2])
         else:
-            QNext = qNetwork.forward(help.flatten_tuple(item[3])).to(qNetwork.device)
+            QNext = qNext.forward(help.flatten_tuple(item[3])).to(qNetwork.device)
             QTarget.append(item[2] + gamma*torch.max(QNext))
     memory = np.array(memory)
+    nextMemory = np.array(nextMemory)
     #print("Memory size: ", np.size(memory))
     #print("Actions: ", actions)
     QPredFull = qNetwork.forward(memory).to(qNetwork.device)
@@ -83,19 +88,50 @@ myAgent = RL.Agent(1,2,(3,0))
 deposit = (3,2)
 myFactory = RL.Factory(3,4,myObstacles,myStations,myAgent,deposit)
 
+
+'''
+# Instantiate the environment:
+myObstacles = [(7,3),(7,4),(7,5),
+               (8,3),(8,4),(8,5),
+               (9,3),(9,4),(9,5),
+               (0,0),(0,1),(0,2),(0,4),(0,5),(0,6),
+               (1,0),
+               (2,0),
+               (3,0),
+               (5,0),
+               (6,0),
+               (7,0),
+               (9,0),
+               (10,0),
+               (12,0),
+               (13,0),
+               (15,0)]
+station1 = RL.Station(1,1,(0,3))
+station2 = RL.Station(1,1,(4,0))
+station3 = RL.Station(1,1,(8,0))
+station4 = RL.Station(1,1,(11,0))
+station5 = RL.Station(1,1,(14,0))
+myStations = [station1,station2,station3,station4,station5]
+myAgent = RL.Agent(0,2,(14,4))
+deposit = (14,5)
+myFactory = RL.Factory(7,16,myObstacles,myStations,myAgent,deposit)
+print(myFactory.grid)
+'''
 observation = myFactory.getState()
 actions = myFactory.possibleActions
 numActions = len(actions)
 observationList = help.flatten_tuple(observation)
 numStates = len(observationList)
 
-ALPHA = 0.03
+ALPHA = 0.01
 EPSILON = 1
 GAMMA = 1.0
-numEpisodes = 1000
+numEpisodes = 100
 totalReward = np.zeros(numEpisodes)
 #QEval = QNetwork(ALPHA,numStates,numActions)
-QNext = QNetwork(ALPHA,numStates,numActions)
+policyNet = QNetwork(ALPHA,numStates,numActions)
+targetNet = QNetwork(ALPHA,numStates,numActions)
+targetNet.load_state_dict(policyNet.state_dict())
 #currentState = help.flatten_tuple(myFactory.getState())
 #actions = QNext.forward(currentState)
 #actionIndex = torch.argmax(actions).item()
@@ -109,8 +145,9 @@ QNext = QNetwork(ALPHA,numStates,numActions)
 #print(myAgent.memory)
 #print(myFactory.randomAction())
 
-
+swapCnt = 0
 for i in range(numEpisodes):
+    swapCnt += 1
     episodeReward = 0
     doneFlag = False
     myFactory.reset()
@@ -121,7 +158,7 @@ for i in range(numEpisodes):
         if randNum < EPSILON:
             action = myFactory.randomAction()
         else:
-            actionsTensor = QNext.forward(currentStateList)
+            actionsTensor = policyNet.forward(currentStateList)
             actionIndex = torch.argmax(actionsTensor).item()
             action = myFactory.possibleActions[actionIndex]
 
@@ -129,14 +166,19 @@ for i in range(numEpisodes):
         newStateList = help.flatten_tuple(newState)
         myAgent.storeTransition(currentStateList, action, reward, newStateList)
         episodeReward+=reward
-        learn(myAgent,QNext,myFactory,30,GAMMA)
+        if swapCnt%1000==0:
+            learn(myAgent,policyNet,targetNet,myFactory,100,GAMMA,True)
+        else:
+            learn(myAgent,policyNet,targetNet,myFactory,100,GAMMA,False)
+        if episodeReward % 1000 == 0:
+            print(episodeReward)
     print(episodeReward)
     totalReward[i] = episodeReward
     if i%10 == 0:
         print("Epsilon:", EPSILON)
         #if episodeReward>-30:
         #    print("Actions: ", actionList)
-        EPSILON = EPSILON*0.99
+        EPSILON = EPSILON*0.9
 
 plt.plot(totalReward)
 plt.show()

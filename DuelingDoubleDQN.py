@@ -9,10 +9,10 @@ import math
 import Rlclasses as RL
 import helpfunctions as help
 
-class DeepQNetwork(nn.Module):
+class DuelingDeepQNetwork(nn.Module):
     def __init__(self, lr, input_dims, fc1_dims, fc2_dims,
                  n_actions):
-        super(DeepQNetwork, self).__init__()
+        super(DuelingDeepQNetwork, self).__init__()
 
         self.input_dims = input_dims
         self.fc1_dims = fc1_dims
@@ -21,6 +21,7 @@ class DeepQNetwork(nn.Module):
         self.fc1 = nn.Linear(self.input_dims, self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
         self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
+        self.values = nn.Linear(fc2_dims,1)
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
@@ -32,8 +33,9 @@ class DeepQNetwork(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         actions = self.fc3(x)
+        V = self.values(x)
 
-        return actions
+        return actions, V
 
 class Agent:
     def __init__(self, gamma, epsilon, lr, input_dims, batch_size, n_actions,
@@ -51,11 +53,11 @@ class Agent:
         self.replace_target = 10
         self.actionCounts = T.ones(n_actions)
 
-        self.Q_eval = DeepQNetwork(lr, n_actions=n_actions,
+        self.Q_eval = DuelingDeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
                                    fc1_dims=8, fc2_dims=16)
         
-        self.Q_target = DeepQNetwork(lr, n_actions=n_actions,
+        self.Q_target = DuelingDeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
                                    fc1_dims=8, fc2_dims=16)
 
@@ -80,7 +82,7 @@ class Agent:
     def choose_action(self, observation):
         if np.random.random() > self.epsilon:
             state = T.tensor(observation).to(self.Q_eval.device)
-            actions = self.Q_eval.forward(state)
+            actions, values = self.Q_eval.forward(state)
             action = T.argmax(actions).item()
         else:
             action = np.random.choice(self.action_space)
@@ -132,8 +134,15 @@ class Agent:
         q = T.zeros(self.batch_size)
         #print("Initialised q values: ", q)
 
-        q_pred = self.Q_eval.forward(new_state_batch).to(self.Q_eval.device)
-        q_eval = self.Q_eval.forward(state_batch).to(self.Q_eval.device)
+
+        a_pred, v_pred = self.Q_eval.forward(new_state_batch)
+        a_eval, v_eval = self.Q_eval.forward(state_batch)
+
+        q_pred = T.add(v_pred, (a_pred-a_pred.mean(dim=1, keepdim=True)))
+        q_eval = T.add(v_eval, (a_eval-a_eval.mean(dim=1, keepdim=True)))
+
+        #q_pred = self.Q_eval.forward(new_state_batch).to(self.Q_eval.device)
+        #q_eval = self.Q_eval.forward(state_batch).to(self.Q_eval.device)
         q_eval = T.gather(q_eval,1,T.tensor(action_batch,dtype=T.int64).view(-1,1))
         #print("Qpred: ", q_pred)
         #print("Qeval: ", q_eval)
@@ -145,7 +154,8 @@ class Agent:
         maxA = maxA.view(-1,1)
         #print("Best actions: ", maxA)
 
-        q_target = self.Q_target.forward(new_state_batch)
+        a_target, v_target = self.Q_target.forward(new_state_batch)
+        q_target = T.add(v_target, (a_target-a_target.mean(dim=1, keepdim=True)))
         #print("Ungathers Qtarget: ", q_target)
         q_target = T.gather(q_target,1,maxA)
         #print("Gathered target: ", q_target)

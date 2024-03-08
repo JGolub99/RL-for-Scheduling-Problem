@@ -48,12 +48,17 @@ class Agent:
         self.batch_size = batch_size
         self.mem_cntr = 0
         self.iter_cntr = 0
-        self.replace_target = 100
+        self.replace_target = 10
         self.actionCounts = T.ones(n_actions)
 
         self.Q_eval = DeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
                                    fc1_dims=8, fc2_dims=16)
+        
+        self.Q_target = DeepQNetwork(lr, n_actions=n_actions,
+                                   input_dims=input_dims,
+                                   fc1_dims=8, fc2_dims=16)
+
         self.state_memory = np.zeros((self.mem_size, input_dims),
                                      dtype=np.float32)
         self.new_state_memory = np.zeros((self.mem_size, input_dims),
@@ -81,6 +86,10 @@ class Agent:
             action = np.random.choice(self.action_space)
 
         return action
+    
+    def replace_target_network(self):
+        if self.iter_cntr % self.replace_target == 0:
+            self.Q_target.load_state_dict(self.Q_eval.state_dict())
 
     def choose_ucb_action(self,observation):     
 
@@ -103,6 +112,8 @@ class Agent:
 
         self.Q_eval.optimizer.zero_grad()
 
+        self.replace_target_network()
+
         max_mem = min(self.mem_cntr, self.mem_size)
 
         batch = np.random.choice(max_mem, self.batch_size, replace=False)
@@ -117,13 +128,38 @@ class Agent:
         terminal_batch = T.tensor(
                 self.terminal_memory[batch]).to(self.Q_eval.device)
 
-        q_eval = self.Q_eval.forward(state_batch)[batch_index, action_batch]
-        q_next = self.Q_eval.forward(new_state_batch)
-        q_next[terminal_batch] = 0.0
+        #q = self.Q_eval.forward(state_batch)[batch_index, action_batch]
+        q = T.zeros(self.batch_size)
+        #print("Initialised q values: ", q)
 
-        q_target = reward_batch + self.gamma*T.max(q_next, dim=1)[0]
+        q_pred = self.Q_eval.forward(new_state_batch).to(self.Q_eval.device)
+        q_eval = self.Q_eval.forward(state_batch).to(self.Q_eval.device)
+        q_eval = T.gather(q_eval,1,T.tensor(action_batch,dtype=T.int64).view(-1,1))
+        #print("Qpred: ", q_pred)
+        #print("Qeval: ", q_eval)
+        #print(q_eval.size())
 
-        loss = self.Q_eval.loss(q_target, q_eval).to(self.Q_eval.device)
+        #q_next = self.Q_next.forward(new_state_batch)
+        
+        maxA = T.argmax(q_pred, dim=1).to(self.Q_eval.device)
+        maxA = maxA.view(-1,1)
+        #print("Best actions: ", maxA)
+
+        q_target = self.Q_target.forward(new_state_batch)
+        #print("Ungathers Qtarget: ", q_target)
+        q_target = T.gather(q_target,1,maxA)
+        #print("Gathered target: ", q_target)
+        #print(q_target[T.logical_not(terminal_batch)].squeeze().size())
+        #print(q[T.logical_not(terminal_batch)])
+
+        #print("Rewards:", reward_batch)
+
+        q[T.logical_not(terminal_batch)] = reward_batch[T.logical_not(terminal_batch)] + self.gamma*q_target[T.logical_not(terminal_batch)].squeeze()
+        q[terminal_batch] = reward_batch[terminal_batch]
+        #print("q_values: ", q)
+        #q_target[maxA] = reward_batch + self.gamma*T.max(q_next, dim=1)
+        #print(q.size(), q_eval.size())
+        loss = self.Q_eval.loss(q, q_eval.squeeze()).to(self.Q_eval.device)
         loss.backward()
         self.Q_eval.optimizer.step()
 
@@ -136,7 +172,7 @@ class Agent:
         #    if self.epsilon > self.eps_min else self.eps_min
 
 
-
+'''
 # Instantiate the environment:
 myObstacles = [(7,3),(7,4),(7,5),
                (8,3),(8,4),(8,5),
@@ -184,6 +220,22 @@ myAgent = RL.Agent(0,2,(14,4))
 deposit = (14,5)
 myFactory = RL.Factory(8,17,myObstacles,myStations,myAgent,deposit)
 print(myFactory.grid)
+'''
+
+# Instantiate the environment:
+myObstacles = [(3,2),
+               (0,0),(0,1),(0,2),(0,3),(0,4),
+               (1,0),(1,4),
+               (2,0),(2,4),
+               (3,0),(3,4),
+               (4,0),(4,4),
+               (5,0),(5,1),(5,2),(5,3),(5,4)]
+station1 = RL.Station(2,3,(1,2))
+station2 = RL.Station(1,1,(1,3))
+myStations = [station1,station2]
+myAgent = RL.Agent(1,2,(4,1))
+deposit = (4,3)
+myFactory = RL.Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
 observation = myFactory.getState()
 actions = myFactory.possibleActions
@@ -194,9 +246,9 @@ numStates = len(observationList)
 GAMMA = 0.95
 ALPHA = 0.003
 EPSILON = 1.0
-BATCHSIZE = 800
+BATCHSIZE = 30
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,20000)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,1000)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     myFactory.reset()

@@ -127,7 +127,7 @@ class Agent:
 
         self.iter_cntr += 1
 
-        if self.iter_cntr % 500 == 0:
+        if self.iter_cntr % 800 == 0:
             self.epsilon = self.epsilon*0.99
             print("Epsilon: ",self.epsilon)
         #self.epsilon = self.epsilon - self.eps_dec \
@@ -183,7 +183,7 @@ observationList = help.flatten_tuple(observation)
 numStates = len(observationList)
 
 GAMMA = 0.95
-ALPHA = 0.003
+ALPHA = 0.005
 EPSILON = 1.0
 BATCHSIZE = 100
 
@@ -201,7 +201,7 @@ print("Memory initilised")
 
 scores = []
 epsHistory = []
-numEpisodes = 500
+numEpisodes = 1000
 
 for episode in range(numEpisodes):
     epsHistory.append(myAgent.epsilon)

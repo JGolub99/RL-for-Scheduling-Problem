@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from matplotlib import pyplot as plt
+import math
 
 import Rlclasses as RL
 import helpfunctions as help
@@ -48,6 +49,7 @@ class Agent:
         self.mem_cntr = 0
         self.iter_cntr = 0
         self.replace_target = 100
+        self.actionCounts = T.ones(n_actions)
 
         self.Q_eval = DeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
@@ -80,6 +82,20 @@ class Agent:
 
         return action
 
+    def choose_ucb_action(self,observation):     
+
+        state = T.tensor(observation).to(self.Q_eval.device)
+        Q = self.Q_eval.forward(state)
+
+
+
+        added = T.sqrt(T.div(math.log(self.iter_cntr+0.001),self.actionCounts))
+
+        actions = Q + 3.0*added
+        action = T.argmax(actions).item()
+        self.actionCounts[action]+=1
+
+        return action
 
     def learn(self):
         if self.mem_cntr < self.batch_size:
@@ -125,18 +141,39 @@ class Agent:
 myObstacles = [(7,3),(7,4),(7,5),
                (8,3),(8,4),(8,5),
                (9,3),(9,4),(9,5),
-               (0,0),(0,1),(0,2),(0,4),(0,5),(0,6),
-               (1,0),
-               (2,0),
-               (3,0),
-               (5,0),
-               (6,0),
-               (7,0),
-               (9,0),
-               (10,0),
-               (12,0),
-               (13,0),
-               (15,0)]
+               (0,0),(0,1),(0,2),(0,4),(0,5),(0,6),(0,7),
+               (1,0),(1,7),
+               (2,0),(2,7),
+               (3,0),(3,7),
+               (4,7),
+               (5,0),(5,7),
+               (6,0),(6,7),
+               (7,0),(7,7),
+               (8,7),
+               (9,0),(9,7),
+               (10,0),(10,7),
+               (11,7),
+               (12,0),(12,7),
+               (13,0),(13,7),
+               (14,7),
+               (15,0),(15,7),
+               (16,0),(16,1),(16,2),(16,3),(16,4),(16,5),(16,6),(16,7)]
+
+block1 = [(1,4),(1,5),(1,6),
+          (2,4),(2,5),(2,6),
+          (3,4),(3,5),(3,6),
+          (4,4),(4,5),(4,6),
+          (5,4),(5,5),(5,6)]
+
+block2 = [(11,3),(11,4),(11,5),
+          (12,3),(12,4),(12,5)]
+
+block3 = [(15,1),(15,2),(15,3),(15,4),(15,5),(15,6)]
+
+myObstacles += block1
+myObstacles += block2
+myObstacles += block3
+
 station1 = RL.Station(1,1,(0,3))
 station2 = RL.Station(1,1,(4,0))
 station3 = RL.Station(1,1,(8,0))
@@ -145,8 +182,8 @@ station5 = RL.Station(1,1,(14,0))
 myStations = [station1,station2,station3,station4,station5]
 myAgent = RL.Agent(0,2,(14,4))
 deposit = (14,5)
-myFactory = RL.Factory(7,16,myObstacles,myStations,myAgent,deposit)
-
+myFactory = RL.Factory(8,17,myObstacles,myStations,myAgent,deposit)
+print(myFactory.grid)
 
 observation = myFactory.getState()
 actions = myFactory.possibleActions
@@ -157,9 +194,9 @@ numStates = len(observationList)
 GAMMA = 0.95
 ALPHA = 0.003
 EPSILON = 1.0
-BATCHSIZE = 2000
+BATCHSIZE = 800
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,50000)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,20000)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     myFactory.reset()
@@ -168,6 +205,8 @@ while myAgent.mem_cntr < myAgent.mem_size:
         action = myFactory.randomAction()
         currentState = myFactory.getState()
         nextState, reward, done = myFactory.step(action)
+        if done:
+            print("Terminated")
         myAgent.store_transition(help.flatten_tuple(currentState),help.get_index(action,myFactory.possibleActions),reward,help.flatten_tuple(nextState),done)
 print("Memory initilised")
 
@@ -191,8 +230,8 @@ while myAgent.epsilon > 0.1 :
         score += reward
         myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)
         myAgent.learn()
-        #if score % 100 == 0:
-        #    print(score)
+        #if score % 5000 == 0:
+            #print(score)
     print(score)
 
     scores.append(score)

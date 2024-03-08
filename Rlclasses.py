@@ -233,10 +233,32 @@ class Factory:
         trialState = self.action(action)
         if not self.illegalState(trialState):
             self.setState(trialState)
+            ILLEGAL = False
+        else:
+            ILLEGAL = True
         newState = self.getState()
 
         if self.isTerminalState(newState):
             reward = 0
+
+        # Here we will impose a penalty for trying to enter an illegal state:
+
+        elif ILLEGAL == True:
+            reward = -10
+
+        # Here we will impose a penalty of loading or unloading when there is only floor space or an obstacle next
+        # to the agent:
+
+        elif action == "Load" or action == "Unload":
+            positionX, positionY = newState[0]
+            if (self.grid[positionX+1][positionY] == 0 or self.grid[positionX+1][positionY] == 3) \
+                and (self.grid[positionX-1][positionY] == 0 or self.grid[positionX-1][positionY] == 3) \
+                and (self.grid[positionX][positionY+1] == 0 or self.grid[positionX][positionY+1] == 3) \
+                and (self.grid[positionX][positionY-1] == 0 or self.grid[positionX][positionY-1] == 3):
+                reward = -5
+            else:
+                reward = -1
+
         else:
             reward = -1
 

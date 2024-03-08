@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 from matplotlib import pyplot as plt
+import math
 
 import Rlclasses as RL
 import helpfunctions as help
@@ -48,6 +49,7 @@ class Agent:
         self.mem_cntr = 0
         self.iter_cntr = 0
         self.replace_target = 100
+        self.actionCounts = T.ones(n_actions)
 
         self.Q_eval = DeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
@@ -77,6 +79,19 @@ class Agent:
             action = T.argmax(actions).item()
         else:
             action = np.random.choice(self.action_space)
+
+        return action
+    
+    def choose_ucb_action(self,observation,c):     
+
+        state = T.tensor(observation).to(self.Q_eval.device)
+        Q = self.Q_eval.forward(state)
+
+        added = T.sqrt(T.div(math.log(self.iter_cntr+0.001),self.actionCounts))
+
+        actions = Q + c*added
+        action = T.argmax(actions).item()
+        self.actionCounts[action]+=1
 
         return action
 
@@ -119,13 +134,19 @@ class Agent:
         #    if self.epsilon > self.eps_min else self.eps_min
 
 # Instantiate the environment:
-myObstacles = [(2,1)]
-station1 = RL.Station(2,3,(0,1))
-station2 = RL.Station(1,1,(0,2))
+myObstacles = [(3,2),
+               (0,0),(0,1),(0,2),(0,3),(0,4),
+               (1,0),(1,4),
+               (2,0),(2,4),
+               (3,0),(3,4),
+               (4,0),(4,4),
+               (5,0),(5,1),(5,2),(5,3),(5,4)]
+station1 = RL.Station(2,3,(1,2))
+station2 = RL.Station(1,1,(1,3))
 myStations = [station1,station2]
-initAgent = RL.Agent(1,2,(3,0))
-deposit = (3,2)
-myFactory = RL.Factory(3,4,myObstacles,myStations,initAgent,deposit)
+myAgent = RL.Agent(1,2,(4,1))
+deposit = (4,3)
+myFactory = RL.Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
 '''
 # Instantiate the environment:
@@ -192,8 +213,10 @@ for episode in range(numEpisodes):
     while not done:
         state = myFactory.getState() # (position tuple, agent load, factory load 1, factor load 2)
         #print(state)
+        #action = myAgent.choose_ucb_action(help.flatten_tuple(state),5)
         action = myAgent.choose_action(help.flatten_tuple(state))
         actionString = myFactory.possibleActions[action]
+        #print(actionString)
         nextState, reward, done = myFactory.step(actionString)
         score += reward
         myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)
@@ -204,5 +227,32 @@ for episode in range(numEpisodes):
 
     scores.append(score)
 
-plt.plot(scores)
+done = False
+myFactory.reset()
+myAgent.epsilon = 0
+score = 0
+while not done:
+    state = myFactory.getState()
+    action = myAgent.choose_action(help.flatten_tuple(state))
+    actionString = myFactory.possibleActions[action]
+    nextState, reward, done = myFactory.step(actionString)
+    score += reward
+    #myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)    
+    print(actionString)
+print("Final score: ",score)
+
+def averageFilter(myList,windowSize):
+    listLength = len(myList)
+    averagedList = []
+    j=0
+    for i in range(windowSize,listLength):
+        partialSum = sum(myList[j:i])
+        partialAverage = partialSum/windowSize
+        averagedList.append(partialAverage)
+        j+=1
+    return averagedList
+
+averaged_scores = averageFilter(scores,30)
+
+plt.plot(averaged_scores)
 plt.show()

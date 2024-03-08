@@ -5,13 +5,28 @@ from matplotlib import pyplot as plt
 import random
 
 # Instantiate the environment:
-myObstacles = [(2,1)]
-station1 = RL.Station(2,3,(0,1))
-station2 = RL.Station(1,1,(0,2))
+#myObstacles = [(2,1)]
+#station1 = RL.Station(2,3,(0,1))
+#station2 = RL.Station(1,1,(0,2))
+#myStations = [station1,station2]
+#myAgent = RL.Agent(1,2,(3,0))
+#deposit = (3,2)
+#myFactory = RL.Factory(3,4,myObstacles,myStations,myAgent,deposit)
+
+# Instantiate the environment:
+myObstacles = [(3,2),
+               (0,0),(0,1),(0,2),(0,3),(0,4),
+               (1,0),(1,4),
+               (2,0),(2,4),
+               (3,0),(3,4),
+               (4,0),(4,4),
+               (5,0),(5,1),(5,2),(5,3),(5,4)]
+station1 = RL.Station(2,3,(1,2))
+station2 = RL.Station(1,1,(1,3))
 myStations = [station1,station2]
-myAgent = RL.Agent(1,2,(3,0))
-deposit = (3,2)
-myFactory = RL.Factory(3,4,myObstacles,myStations,myAgent,deposit)
+myAgent = RL.Agent(1,2,(4,1))
+deposit = (4,3)
+myFactory = RL.Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
 # Set the hyperparameters:
 ALPHA = 0.1

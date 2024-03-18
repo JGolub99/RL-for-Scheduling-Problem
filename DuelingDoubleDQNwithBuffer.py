@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 from matplotlib import pyplot as plt
 import math
+import utils
 
 import Rlclasses as RL
 import helpfunctions as help
@@ -38,12 +39,13 @@ class DuelingDeepQNetwork(nn.Module):
         return actions, V
 
 class Agent:
-    def __init__(self, gamma, epsilon, lr, input_dims, batch_size, n_actions,
-                 max_mem_size=5000, eps_end=0.05, eps_dec=5e-4):
+    def __init__(self, gamma, epsilon, lr, input_dims, batch_size, n_actions, myBeta,
+                 max_mem_size=5000, eps_end=0.1, eps_dec=0.99, reduce_eps = 1000, annealBias=True):
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_min = eps_end
         self.eps_dec = eps_dec
+        self.reduce_eps = reduce_eps
         self.lr = lr
         self.action_space = [i for i in range(n_actions)]
         self.mem_size = max_mem_size
@@ -52,6 +54,14 @@ class Agent:
         self.iter_cntr = 0
         self.replace_target = 10
         self.actionCounts = T.ones(n_actions)
+        self.beta = myBeta
+
+        if annealBias:
+            self.final_p = 1.0
+        else:
+            self.final_p = self.beta
+
+        self.beta_schedule = utils.LinearSchedule(math.log(self.eps_min)*self.reduce_eps/math.log(self.eps_dec), initial_p=self.beta, final_p=self.final_p)
 
         self.Q_eval = DuelingDeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
@@ -127,7 +137,7 @@ class Agent:
         #terminal_batch = T.tensor(
         #        self.terminal_memory[batch]).to(self.Q_eval.device)
         
-        samples = self.memory.sample(self.batch_size,beta = 0.4)
+        samples = self.memory.sample(self.batch_size,self.beta)
         state_batch = T.tensor(samples[0]).to(self.Q_eval.device)
         new_state_batch = T.tensor(samples[3]).to(self.Q_eval.device)
         action_batch = samples[1]
@@ -188,9 +198,11 @@ class Agent:
 
         self.iter_cntr += 1
 
-        if self.iter_cntr % 1000 == 0:
-            self.epsilon = self.epsilon*0.99
+        if self.iter_cntr % self.reduce_eps == 0:
+            self.epsilon = self.epsilon*self.eps_dec
+            self.beta = self.beta_schedule.value(self.iter_cntr)
             print("Epsilon: ",self.epsilon)
+            print('Beta: ', self.beta)
 
         td_errors = TD_error.detach().numpy()
         new_priorities = np.abs(td_errors) + 1e-6
@@ -275,7 +287,9 @@ ALPHA = 0.003
 EPSILON = 1.0
 BATCHSIZE = 30
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,1000)
+INITIAL_BETA = 0.2
+
+myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,INITIAL_BETA,1000)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     myFactory.reset()
@@ -293,7 +307,7 @@ scores = []
 epsHistory = []
 numEpisodes = 500
 
-while myAgent.epsilon > 0.1 :
+while myAgent.epsilon > myAgent.eps_min :
     epsHistory.append(myAgent.epsilon)
     done = False
     myFactory.reset()

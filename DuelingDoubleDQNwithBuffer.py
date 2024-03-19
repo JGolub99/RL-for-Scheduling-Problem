@@ -189,8 +189,8 @@ class Agent:
         #print("q_values: ", q)
         #q_target[maxA] = reward_batch + self.gamma*T.max(q_next, dim=1)
         TD_error = q - q_eval.squeeze()
-        weighted_TD_errors = T.mul(TD_error, weights)
-        zero_tensor = T.zeros(weighted_TD_errors.shape)
+        weighted_TD_errors = T.mul(TD_error, weights).to(self.Q_eval.device)
+        zero_tensor = T.zeros(weighted_TD_errors.shape).to(self.Q_eval.device)
         
         loss = self.Q_eval.loss(weighted_TD_errors, zero_tensor).to(self.Q_eval.device)
         loss.backward()
@@ -202,7 +202,7 @@ class Agent:
             self.epsilon = self.epsilon*self.eps_dec
             self.beta = self.beta_schedule.value(self.iter_cntr)
             print("Epsilon: ",self.epsilon)
-            print('Beta: ', self.beta)
+            #print('Beta: ', self.beta)
 
         td_errors = TD_error.detach().numpy()
         new_priorities = np.abs(td_errors) + 1e-6

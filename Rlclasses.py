@@ -273,3 +273,24 @@ class Factory:
         self.addDeposit()
         self.addObstacles()
         self.addStations()
+
+    def reset2(self):
+        # In this function we need to rebuild the grid and initial state, however it will be a random legal one:
+        self.agent = copy.deepcopy(self.initialAgent)
+        self.agent.load = random.randint(0,self.agent.maximum)
+        possiblePos = [(x, y) for x in range(self.width) for y in range(self.height)]
+        Pos = [x for x in possiblePos if x not in self.obstacles]
+
+        # Choose a random element from the filtered list
+        self.agent.position = random.choice(Pos)
+
+        self.stations = copy.deepcopy(self.initialStations)
+        for station in self.stations:
+            station.load = random.randint(0,station.maximum)
+
+        self.grid = np.zeros((self.width,self.height))
+        self.addAgent()
+        self.addDeposit()
+        self.addObstacles()
+        self.addStations()
+        

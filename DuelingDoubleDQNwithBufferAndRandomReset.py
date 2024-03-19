@@ -5,6 +5,7 @@ import torch.optim as optim
 import numpy as np
 from matplotlib import pyplot as plt
 import math
+import utils
 
 import Rlclasses as RL
 import helpfunctions as help
@@ -25,12 +26,7 @@ class DuelingDeepQNetwork(nn.Module):
 
         self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
-        if T.cuda.is_available():
-          self.device = T.device('cuda:0')
-          print("GPU")
-        else:
-          self.device = T.device('cpu')
-          print("CPU")
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
         self.to(self.device)
 
     def forward(self, state):
@@ -43,12 +39,13 @@ class DuelingDeepQNetwork(nn.Module):
         return actions, V
 
 class Agent:
-    def __init__(self, gamma, epsilon, lr, input_dims, batch_size, n_actions,
-                 max_mem_size=5000, eps_end=0.05, eps_dec=5e-4):
+    def __init__(self, gamma, epsilon, lr, input_dims, batch_size, n_actions, myBeta,
+                 max_mem_size=5000, eps_end=0.1, eps_dec=0.99, reduce_eps = 1000, annealBias=True):
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_min = eps_end
         self.eps_dec = eps_dec
+        self.reduce_eps = reduce_eps
         self.lr = lr
         self.action_space = [i for i in range(n_actions)]
         self.mem_size = max_mem_size
@@ -56,30 +53,41 @@ class Agent:
         self.mem_cntr = 0
         self.iter_cntr = 0
         self.replace_target = 10
+        self.actionCounts = T.ones(n_actions)
+        self.beta = myBeta
+
+        if annealBias:
+            self.final_p = 1.0
+        else:
+            self.final_p = self.beta
+
+        self.beta_schedule = utils.LinearSchedule(math.log(self.eps_min)*self.reduce_eps/math.log(self.eps_dec), initial_p=self.beta, final_p=self.final_p)
 
         self.Q_eval = DuelingDeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
-                                   fc1_dims=64, fc2_dims=128)
+                                   fc1_dims=8, fc2_dims=16)
         
         self.Q_target = DuelingDeepQNetwork(lr, n_actions=n_actions,
                                    input_dims=input_dims,
-                                   fc1_dims=64, fc2_dims=128)
-        self.actionCounts = T.ones(n_actions).to(self.Q_eval.device)
-        self.state_memory = np.zeros((self.mem_size, input_dims),
-                                     dtype=np.float32)
-        self.new_state_memory = np.zeros((self.mem_size, input_dims),
-                                         dtype=np.float32)
-        self.action_memory = np.zeros(self.mem_size, dtype=np.int32)
-        self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
-        self.terminal_memory = np.zeros(self.mem_size, dtype=bool)
+                                   fc1_dims=8, fc2_dims=16)
+
+        #self.state_memory = np.zeros((self.mem_size, input_dims),
+        #                             dtype=np.float32)
+        #self.new_state_memory = np.zeros((self.mem_size, input_dims),
+        #                                 dtype=np.float32)
+        #self.action_memory = np.zeros(self.mem_size, dtype=np.int32)
+        #self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
+        #self.terminal_memory = np.zeros(self.mem_size, dtype=bool)
+        self.memory = help.PrioritizedReplayBuffer(size=self.mem_size,alpha=0.6)
 
     def store_transition(self, state, action, reward, state_, terminal):
-        index = self.mem_cntr % self.mem_size
-        self.state_memory[index] = state
-        self.new_state_memory[index] = state_
-        self.reward_memory[index] = reward
-        self.action_memory[index] = action
-        self.terminal_memory[index] = terminal
+        #index = self.mem_cntr % self.mem_size
+        #self.state_memory[index] = state
+        #self.new_state_memory[index] = state_
+        #self.reward_memory[index] = reward
+        #self.action_memory[index] = action
+        #self.terminal_memory[index] = terminal
+        self.memory.add(state,action,reward,state_,terminal)
 
         self.mem_cntr += 1
 
@@ -97,6 +105,20 @@ class Agent:
         if self.iter_cntr % self.replace_target == 0:
             self.Q_target.load_state_dict(self.Q_eval.state_dict())
 
+    def choose_ucb_action(self,observation):     
+
+        state = T.tensor(observation).to(self.Q_eval.device)
+        Q = self.Q_eval.forward(state)
+
+
+
+        added = T.sqrt(T.div(math.log(self.iter_cntr+0.001),self.actionCounts))
+
+        actions = Q + 3.0*added
+        action = T.argmax(actions).item()
+        self.actionCounts[action]+=1
+
+        return action
 
     def learn(self):
         if self.mem_cntr < self.batch_size:
@@ -106,62 +128,87 @@ class Agent:
 
         self.replace_target_network()
 
-        max_mem = min(self.mem_cntr, self.mem_size)
+        #state_batch = T.tensor(self.state_memory[batch]).to(self.Q_eval.device)
+        #new_state_batch = T.tensor(
+        #        self.new_state_memory[batch]).to(self.Q_eval.device)
+        #action_batch = self.action_memory[batch]
+        #reward_batch = T.tensor(
+        #        self.reward_memory[batch]).to(self.Q_eval.device)
+        #terminal_batch = T.tensor(
+        #        self.terminal_memory[batch]).to(self.Q_eval.device)
+        
+        samples = self.memory.sample(self.batch_size,self.beta)
+        state_batch = T.tensor(samples[0]).to(self.Q_eval.device)
+        new_state_batch = T.tensor(samples[3]).to(self.Q_eval.device)
+        action_batch = samples[1]
+        reward_batch = T.tensor(samples[2]).to(self.Q_eval.device)
+        terminal_batch = T.tensor(samples[4]).to(self.Q_eval.device)
+        weights = samples[5]
+        batch_idxes = samples[6]
 
-        batch = np.random.choice(max_mem, self.batch_size, replace=False)
-        batch_index = np.arange(self.batch_size, dtype=np.int32)
 
-        state_batch = T.tensor(self.state_memory[batch]).to(self.Q_eval.device)
-        new_state_batch = T.tensor(
-                self.new_state_memory[batch]).to(self.Q_eval.device)
-        action_batch = self.action_memory[batch]
-        reward_batch = T.tensor(
-                self.reward_memory[batch]).to(self.Q_eval.device)
-        terminal_batch = T.tensor(
-                self.terminal_memory[batch]).to(self.Q_eval.device)
+        weights = np.sqrt(weights)
+        weights = T.FloatTensor(weights).to(self.Q_eval.device)
 
-        q = T.zeros(self.batch_size).to(self.Q_eval.device)
+        #q = self.Q_eval.forward(state_batch)[batch_index, action_batch]
+        q = T.zeros(self.batch_size)
+        #print("Initialised q values: ", q)
 
 
         a_pred, v_pred = self.Q_eval.forward(new_state_batch)
         a_eval, v_eval = self.Q_eval.forward(state_batch)
 
-        a_pred.to(self.Q_eval.device)
-        v_pred.to(self.Q_eval.device)
-        a_eval.to(self.Q_eval.device)
-        v_eval.to(self.Q_eval.device)
+        q_pred = T.add(v_pred, (a_pred-a_pred.mean(dim=1, keepdim=True)))
+        q_eval = T.add(v_eval, (a_eval-a_eval.mean(dim=1, keepdim=True)))
 
-        q_pred = T.add(v_pred, (a_pred-a_pred.mean(dim=1, keepdim=True))).to(self.Q_eval.device)
-        q_eval = T.add(v_eval, (a_eval-a_eval.mean(dim=1, keepdim=True))).to(self.Q_eval.device)
+        #q_pred = self.Q_eval.forward(new_state_batch).to(self.Q_eval.device)
+        #q_eval = self.Q_eval.forward(state_batch).to(self.Q_eval.device)
+        q_eval = T.gather(q_eval,1,T.tensor(action_batch,dtype=T.int64).view(-1,1))
+        #print("Qpred: ", q_pred)
+        #print("Qeval: ", q_eval)
+        #print(q_eval.size())
 
-        q_eval = T.gather(q_eval,1,T.tensor(action_batch,dtype=T.int64).view(-1,1).to(self.Q_eval.device)).to(self.Q_eval.device)
-
+        #q_next = self.Q_next.forward(new_state_batch)
         
         maxA = T.argmax(q_pred, dim=1).to(self.Q_eval.device)
         maxA = maxA.view(-1,1)
+        #print("Best actions: ", maxA)
 
         a_target, v_target = self.Q_target.forward(new_state_batch)
-        a_target.to(self.Q_target.device)
-        v_target.to(self.Q_target.device)
-        q_target = T.add(v_target, (a_target-a_target.mean(dim=1, keepdim=True))).to(self.Q_target.device)
-        q_target = T.gather(q_target,1,maxA).to(self.Q_target.device)
+        q_target = T.add(v_target, (a_target-a_target.mean(dim=1, keepdim=True)))
+        #print("Ungathers Qtarget: ", q_target)
+        q_target = T.gather(q_target,1,maxA)
+        #print("Gathered target: ", q_target)
+        #print(q_target[T.logical_not(terminal_batch)].squeeze().size())
+        #print(q[T.logical_not(terminal_batch)])
 
+        #print("Rewards:", reward_batch)
 
-        logical_not = T.logical_not(terminal_batch).to(self.Q_eval.device)
-
-        q[logical_not] = reward_batch[logical_not] + self.gamma*q_target[logical_not].squeeze()
-        q[terminal_batch] = reward_batch[terminal_batch]
-
-        loss = self.Q_eval.loss(q, q_eval.squeeze()).to(self.Q_eval.device)
+        q[T.logical_not(terminal_batch)] = reward_batch[T.logical_not(terminal_batch)] + self.gamma*q_target[T.logical_not(terminal_batch)].squeeze()
+        q[terminal_batch] = reward_batch[terminal_batch].float()
+        #print("q_values: ", q)
+        #q_target[maxA] = reward_batch + self.gamma*T.max(q_next, dim=1)
+        TD_error = q - q_eval.squeeze()
+        weighted_TD_errors = T.mul(TD_error, weights).to(self.Q_eval.device)
+        zero_tensor = T.zeros(weighted_TD_errors.shape).to(self.Q_eval.device)
+        
+        loss = self.Q_eval.loss(weighted_TD_errors, zero_tensor).to(self.Q_eval.device)
         loss.backward()
         self.Q_eval.optimizer.step()
 
         self.iter_cntr += 1
 
-        if self.iter_cntr % 1000 == 0:
-            self.epsilon = self.epsilon*0.99
+        if self.iter_cntr % self.reduce_eps == 0:
+            self.epsilon = self.epsilon*self.eps_dec
+            self.beta = self.beta_schedule.value(self.iter_cntr)
             print("Epsilon: ",self.epsilon)
+            #print('Beta: ', self.beta)
 
+        td_errors = TD_error.detach().numpy()
+        new_priorities = np.abs(td_errors) + 1e-6
+        self.memory.update_priorities(batch_idxes, new_priorities)
+        #self.epsilon = self.epsilon - self.eps_dec \
+        #    if self.epsilon > self.eps_min else self.eps_min
 
 
 '''
@@ -240,10 +287,11 @@ ALPHA = 0.003
 EPSILON = 1.0
 BATCHSIZE = 30
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,1000)
+INITIAL_BETA = 0.2
+
+myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,INITIAL_BETA,1000,reduce_eps=3000)
 
 while myAgent.mem_cntr < myAgent.mem_size:
-    myFactory.reset()
     done = False
     while not done:
         action = myFactory.randomAction()
@@ -252,16 +300,17 @@ while myAgent.mem_cntr < myAgent.mem_size:
         if done:
             print("Terminated")
         myAgent.store_transition(help.flatten_tuple(currentState),help.get_index(action,myFactory.possibleActions),reward,help.flatten_tuple(nextState),done)
+    myFactory.reset2()
 print("Memory initilised")
 
 scores = []
 epsHistory = []
 numEpisodes = 500
 
-while myAgent.epsilon > 0.1 :
+while myAgent.epsilon > myAgent.eps_min :
     epsHistory.append(myAgent.epsilon)
     done = False
-    myFactory.reset()
+    myFactory.reset2()
 
     score = 0
 
@@ -281,7 +330,8 @@ while myAgent.epsilon > 0.1 :
     scores.append(score)
 
 done = False
-myFactory.reset()
+myFactory.reset2()
+print(myFactory.getState())
 myAgent.epsilon = 0
 score = 0
 while not done:

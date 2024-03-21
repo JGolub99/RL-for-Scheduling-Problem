@@ -73,6 +73,11 @@ class Factory:
         self.deposit = deposit
         self.obstacles = listOfObstacles
 
+        self.stateGrid = np.zeros((2,self.width,self.height))
+        self.stateGrid[0][self.deposit[0]][self.deposit[1]] = 4
+        for obstacle in self.obstacles:
+            self.stateGrid[0][obstacle[0]][obstacle[1]] = 1
+
         self.reset()
         self.createStateSpace(agent)
         self.possibleActions = ["Up", "Right", "Down", "Left", "Load", "Unload"]
@@ -125,11 +130,11 @@ class Factory:
             rowIndex+=1
         
     def isTerminalState(self,state):
-        return state in self.stateSpacePlus and state not in self.stateSpace
+        return np.all(state[1] == 0)
 
     def getState(self):
         stationLoads = [stationLoad.load for stationLoad in self.stations]
-        return tuple([self.agent.position, self.agent.load] + stationLoads)
+        return self.convert_state(tuple([self.agent.position, self.agent.load] + stationLoads))
 
     def setState(self,state):
         # This function needs to update the grid and the state
@@ -264,6 +269,20 @@ class Factory:
 
         return newState, reward, self.isTerminalState(newState) 
     
+    def convert_state(self,old_state):
+        new_state = copy.copy(self.stateGrid)
+        agentPositionX, agentPositionY = old_state[0]
+        agentLoad = old_state[1]
+        new_state[0][agentPositionX][agentPositionY] = 2
+        new_state[1][agentPositionX][agentPositionY] = agentLoad
+        stationIndex = 2
+        for station in self.stations:
+            stationPositionX, stationPositionY = station.position
+            new_state[0][stationPositionX][stationPositionY] = 3
+            new_state[1][stationPositionX][stationPositionY] = old_state[stationIndex]
+            stationIndex+=1
+        return new_state
+    
     def reset(self):
         # In this function we need to rebuld the grid and initial state:
         self.agent = copy.deepcopy(self.initialAgent)
@@ -294,3 +313,23 @@ class Factory:
         self.addObstacles()
         self.addStations()
         
+
+# Instantiate the environment:
+myObstacles = [(3,2),
+               (0,0),(0,1),(0,2),(0,3),(0,4),
+               (1,0),(1,4),
+               (2,0),(2,4),
+               (3,0),(3,4),
+               (4,0),(4,4),
+               (5,0),(5,1),(5,2),(5,3),(5,4)]
+station1 = Station(2,3,(1,2))
+station2 = Station(1,1,(1,3))
+myStations = [station1,station2]
+myAgent = Agent(1,2,(4,1))
+deposit = (4,3)
+myFactory = Factory(5,6,myObstacles,myStations,myAgent,deposit)
+
+observation = myFactory.getState()
+print(observation)
+nextState, reward, done = myFactory.step('Right')
+print(nextState)

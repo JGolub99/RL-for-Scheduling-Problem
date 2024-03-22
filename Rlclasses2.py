@@ -255,7 +255,8 @@ class Factory:
         # to the agent:
 
         elif action == "Load" or action == "Unload":
-            positionX, positionY = newState[0]
+            positionX = np.where(newState[0] == 2)[0].item()
+            positionY = np.where(newState[0] == 2)[1].item()
             if (self.grid[positionX+1][positionY] == 0 or self.grid[positionX+1][positionY] == 3) \
                 and (self.grid[positionX-1][positionY] == 0 or self.grid[positionX-1][positionY] == 3) \
                 and (self.grid[positionX][positionY+1] == 0 or self.grid[positionX][positionY+1] == 3) \

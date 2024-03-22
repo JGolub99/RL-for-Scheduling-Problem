@@ -7,19 +7,22 @@ from matplotlib import pyplot as plt
 import math
 import utils
 
-import Rlclasses as RL
+import Rlclasses2 as RL
 import helpfunctions as help
 
 class DuelingDeepQNetwork(nn.Module):
-    def __init__(self, lr, input_dims, fc1_dims, fc2_dims,
+    def __init__(self, lr, width, height, fc1_dims, fc2_dims,
                  n_actions):
         super(DuelingDeepQNetwork, self).__init__()
 
-        self.input_dims = input_dims
+        self.width = width
+        self.height = height
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
         self.n_actions = n_actions
-        self.fc1 = nn.Linear(self.input_dims, self.fc1_dims)
+        self.conv1 = nn.Conv2d(2,8,3)
+        self.conv2 = nn.Conv2d(8,16,3)
+        self.fc1 = nn.Linear(16*(height-4)*(width-4), self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
         self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
         self.values = nn.Linear(fc2_dims,1)
@@ -31,6 +34,9 @@ class DuelingDeepQNetwork(nn.Module):
 
     def forward(self, state):
         x = state.type(T.float32)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = x.view(-1,16*(self.height-4)*(self.width-4))
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         actions = self.fc3(x)
@@ -39,7 +45,7 @@ class DuelingDeepQNetwork(nn.Module):
         return actions, V
 
 class Agent:
-    def __init__(self, gamma, epsilon, lr, input_dims, batch_size, n_actions, myBeta,
+    def __init__(self, gamma, epsilon, lr, width,height, batch_size, n_actions, myBeta,
                  max_mem_size=5000, eps_end=0.1, eps_dec=0.99, reduce_eps = 1000, annealBias=True):
         self.gamma = gamma
         self.epsilon = epsilon
@@ -64,11 +70,11 @@ class Agent:
         self.beta_schedule = utils.LinearSchedule(math.log(self.eps_min)*self.reduce_eps/math.log(self.eps_dec), initial_p=self.beta, final_p=self.final_p)
 
         self.Q_eval = DuelingDeepQNetwork(lr, n_actions=n_actions,
-                                   input_dims=input_dims,
+                                   width=width,height=height,
                                    fc1_dims=8, fc2_dims=16)
         
         self.Q_target = DuelingDeepQNetwork(lr, n_actions=n_actions,
-                                   input_dims=input_dims,
+                                   width=width,height=height,
                                    fc1_dims=8, fc2_dims=16)
 
         #self.state_memory = np.zeros((self.mem_size, input_dims),
@@ -276,11 +282,8 @@ myAgent = RL.Agent(1,2,(4,1))
 deposit = (4,3)
 myFactory = RL.Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
-observation = myFactory.getState()
 actions = myFactory.possibleActions
 numActions = len(actions)
-observationList = help.flatten_tuple(observation)
-numStates = len(observationList)
 
 GAMMA = 0.95
 ALPHA = 0.003
@@ -289,7 +292,7 @@ BATCHSIZE = 30
 
 INITIAL_BETA = 0.2
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,numStates,BATCHSIZE,numActions,INITIAL_BETA,1000,reduce_eps=3000)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA,1000,reduce_eps=1000)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     done = False
@@ -299,7 +302,7 @@ while myAgent.mem_cntr < myAgent.mem_size:
         nextState, reward, done = myFactory.step(action)
         if done:
             print("Terminated")
-        myAgent.store_transition(help.flatten_tuple(currentState),help.get_index(action,myFactory.possibleActions),reward,help.flatten_tuple(nextState),done)
+        myAgent.store_transition(currentState,help.get_index(action,myFactory.possibleActions),reward,nextState,done)
     myFactory.reset2()
 print("Memory initilised")
 
@@ -315,13 +318,13 @@ while myAgent.epsilon > myAgent.eps_min :
     score = 0
 
     while not done:
-        state = myFactory.getState() # (position tuple, agent load, factory load 1, factor load 2)
+        state = myFactory.getState()
         #print(state)
-        action = myAgent.choose_action(help.flatten_tuple(state))
+        action = myAgent.choose_action(state)
         actionString = myFactory.possibleActions[action]
         nextState, reward, done = myFactory.step(actionString)
         score += reward
-        myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)
+        myAgent.store_transition(state,action,reward,nextState,done)
         myAgent.learn()
         #if score % 5000 == 0:
             #print(score)
@@ -345,5 +348,3 @@ while not done:
 print("Final score: ",score)
 plt.plot(scores)
 plt.show()
-
-#TEST CHANGE

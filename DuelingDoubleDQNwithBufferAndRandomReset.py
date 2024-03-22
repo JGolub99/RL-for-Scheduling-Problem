@@ -291,8 +291,9 @@ EPSILON = 1.0
 BATCHSIZE = 30
 
 INITIAL_BETA = 0.2
+RANDOM_RESET = True
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA,1000,reduce_eps=1000)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA,1000,reduce_eps=1000,annealBias=True)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     done = False
@@ -303,7 +304,10 @@ while myAgent.mem_cntr < myAgent.mem_size:
         if done:
             print("Terminated")
         myAgent.store_transition(currentState,help.get_index(action,myFactory.possibleActions),reward,nextState,done)
-    myFactory.reset2()
+    if RANDOM_RESET:
+        myFactory.reset2()
+    else:
+        myFactory.reset()
 print("Memory initilised")
 
 scores = []
@@ -313,7 +317,10 @@ numEpisodes = 500
 while myAgent.epsilon > myAgent.eps_min :
     epsHistory.append(myAgent.epsilon)
     done = False
-    myFactory.reset2()
+    if RANDOM_RESET:
+        myFactory.reset2()
+    else:
+        myFactory.reset()
 
     score = 0
 
@@ -333,7 +340,10 @@ while myAgent.epsilon > myAgent.eps_min :
     scores.append(score)
 
 done = False
-myFactory.reset2()
+if RANDOM_RESET:
+    myFactory.reset2()
+else:
+    myFactory.reset()
 print(myFactory.getState())
 myAgent.epsilon = 0
 score = 0

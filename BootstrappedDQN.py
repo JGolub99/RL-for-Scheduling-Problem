@@ -218,7 +218,6 @@ class Agent:
         weights = T.FloatTensor(weights).to(self.Q_eval.device)
 
         #q = self.Q_eval.forward(state_batch)[batch_index, action_batch]
-        q = T.zeros(self.batch_size)
         #print("Initialised q values: ", q)
 
         q_pred_list = self.Q_eval.forward(new_state_batch,None) #[(action,q),...]
@@ -227,6 +226,7 @@ class Agent:
 
         cnt_losses = []
         for k in range(self.numHeads):
+            q = T.zeros(self.batch_size)
             total_used = T.sum(mask[:,k])
 
             if total_used > 0.0:
@@ -347,13 +347,13 @@ ALPHA = 0.003
 EPSILON = 1.0
 BATCHSIZE = 30
 
-INITIAL_BETA = 0.2
+INITIAL_BETA = 0.99
 RANDOM_RESET = False
 
 NUM_HEADS = 5
 BERNOULLI_PROB = 0.5
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA, NUM_HEADS,BERNOULLI_PROB,5000,reduce_eps=500,annealBias=True)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA, NUM_HEADS,BERNOULLI_PROB,5000,reduce_eps=500,annealBias=False)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     done = False

@@ -136,6 +136,10 @@ class Factory:
         stationLoads = [stationLoad.load for stationLoad in self.stations]
         return self.convert_state(tuple([self.agent.position, self.agent.load] + stationLoads))
 
+    def getStateAsList(self):
+        stationLoads = [stationLoad.load for stationLoad in self.stations]
+        return [self.agent.position, self.agent.load] + stationLoads       
+
     def setState(self,state):
         # This function needs to update the grid and the state
         self.removeAgent()
@@ -313,6 +317,70 @@ class Factory:
         self.addDeposit()
         self.addObstacles()
         self.addStations()
+    
+    def perturb(self,prob):
+        # In this function we change the state
+        # prob = [p(move), p(remove), p(add)]
+        # This can either be by moving the agent by a space, or removing/adding a load
+        i = np.random.choice([0,1,2], 1, p=prob).item()
+        if i == 0: #Move the agent
+            direction = random.randint(0,3)
+            newState = self.move(direction)
+            if not self.illegalState(newState):
+                self.setState(newState)
+            else:
+                self.perturb([1.0,0.0,0.0])
+
+        elif i == 1: #Remove a load
+            # First determine if removing a load would result in a terminal state. We want to avoid this.
+            totalLoads = sum([station.load for station in self.stations]) + self.agent.load
+            currentState = self.getStateAsList()
+            if totalLoads < 2:
+                self.perturb([1.0,0.0,0.0]) # Default to moving the agent
+            else:
+                stationPreferences = np.arange(0,len(self.stations)+1)
+                np.random.shuffle(stationPreferences)
+                for j in stationPreferences:
+                    if j == 0: # We will take this to be the agent itself
+                        if self.agent.load == 0:
+                            pass
+                        else:
+                            currentState[1]-=1
+                            self.setState(tuple(currentState))
+                            break
+                    else:
+                        if currentState[j+1] == 0:
+                            pass
+                        else:
+                            currentState[j+1]-=1
+                            self.setState(tuple(currentState))
+                            break
+        
+        elif i == 2: #Add a load
+            totalLoads = sum([station.load for station in self.stations]) + self.agent.load
+            maxLoads = sum([station.maximum for station in self.stations]) + self.agent.maximum
+            currentState = self.getStateAsList()
+            if totalLoads > 0.8*maxLoads:
+                self.perturb([1.0,0.0,0.0]) # Default to moving the agent
+            else:
+                stationPreferences = np.arange(0,len(self.stations)+1)
+                np.random.shuffle(stationPreferences)
+                for j in stationPreferences:
+                    if j == 0: # We will take this to be the agent itself
+                        if self.agent.load == self.agent.maximum:
+                            pass
+                        else:
+                            currentState[1]+=1
+                            self.setState(tuple(currentState))
+                            break
+                    else:
+                        if currentState[j+1] == self.stations[j-1].maximum:
+                            pass
+                        else:
+                            currentState[j+1]+=1
+                            self.setState(tuple(currentState))
+                            break
+
         
 
 # Instantiate the environment:
@@ -334,3 +402,6 @@ observation = myFactory.getState()
 print(observation)
 nextState, reward, done = myFactory.step('Right')
 print(nextState)
+myFactory.perturb([0.0,0.0,1.0])
+newobservation = myFactory.getState()
+print(newobservation)

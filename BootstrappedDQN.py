@@ -6,6 +6,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import math
 import utils
+import random
 
 import Rlclasses2 as RL
 import helpfunctions as help
@@ -44,6 +45,70 @@ class DuelingDeepQNetwork(nn.Module):
 
         return actions, V
 
+class SharedNet(nn.Module):
+    def __init__(self, width, height, fc1_dims):
+        super(SharedNet, self).__init__()
+        self.width = width
+        self.height = height
+        self.fc1_dims = fc1_dims
+
+        self.conv1 = nn.Conv2d(2,8,3)
+        self.conv2 = nn.Conv2d(8,16,3)
+        self.fc1 = nn.Linear(16*(height-4)*(width-4), self.fc1_dims)
+
+
+    def forward(self, x):
+        x = x.type(T.float32)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = x.view(-1,16*(self.height-4)*(self.width-4))
+        x = F.relu(self.fc1(x))
+        return x
+
+class HeadNet(nn.Module):
+    def __init__(self, n_actions, fc1_dims, fc2_dims):
+        super(HeadNet, self).__init__()
+        self.n_actions = n_actions
+        self.fc1_dims = fc1_dims
+        self.fc2_dims = fc2_dims
+
+        self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
+        self.fc3 = nn.Linear(self.fc2_dims, self.n_actions)
+        self.values = nn.Linear(self.fc2_dims,1)
+
+    def forward(self, x):
+        x = F.relu(self.fc2(x))
+        actions = self.fc3(x)
+        V = self.values(x)
+        return actions, T.add(V, (actions-actions.mean(dim=1, keepdim=True)))
+
+class EnsembleNet(nn.Module):
+    def __init__(self, n_ensemble, lr, width, height, fc1_dims, fc2_dims,
+                 n_actions):
+        super(EnsembleNet, self).__init__()
+
+        self.shared_net = SharedNet(width, height, fc1_dims)
+
+        self.net_list = nn.ModuleList([HeadNet(n_actions,fc1_dims,fc2_dims) for k in range(n_ensemble)])
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
+        self.loss = nn.MSELoss()
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
+        self.to(self.device)
+
+    def _core(self, x):
+        return self.shared_net(x)
+
+    def _heads(self, x):
+        return [net(x) for net in self.net_list]
+
+    def forward(self, x, k):
+        if k is not None:
+            return self.net_list[k](self.shared_net(x))
+        else:
+            core_cache = self._core(x)
+            net_heads = self._heads(core_cache)
+            return net_heads
+
 class Agent:
     def __init__(self, gamma, epsilon, lr, width,height, batch_size, n_actions, myBeta, numHeads, bProb,
                  max_mem_size=5000, eps_end=0.1, eps_dec=0.99, reduce_eps = 1000, annealBias=True):
@@ -71,11 +136,11 @@ class Agent:
 
         self.beta_schedule = utils.LinearSchedule(math.log(self.eps_min)*self.reduce_eps/math.log(self.eps_dec), initial_p=self.beta, final_p=self.final_p)
 
-        self.Q_eval = DuelingDeepQNetwork(lr, n_actions=n_actions,
+        self.Q_eval = EnsembleNet(self.numHeads,lr, n_actions=n_actions,
                                    width=width,height=height,
                                    fc1_dims=8, fc2_dims=16)
         
-        self.Q_target = DuelingDeepQNetwork(lr, n_actions=n_actions,
+        self.Q_target = EnsembleNet(self.numHeads,lr, n_actions=n_actions,
                                    width=width,height=height,
                                    fc1_dims=8, fc2_dims=16)
 
@@ -99,10 +164,17 @@ class Agent:
 
         self.mem_cntr += 1
 
-    def choose_action(self, observation):
-        if np.random.random() > self.epsilon:
-            state = T.tensor(observation).to(self.Q_eval.device)
-            actions, values = self.Q_eval.forward(state)
+    def choose_action(self, observation,k):
+        state = T.tensor(observation).to(self.Q_eval.device)
+        if k == None:
+            actions = self.Q_eval.forward(state,k)
+            action_list = []
+            for head in actions:
+                option = T.argmax(head[0]).item()
+                action_list.append(option)
+            action = max(set(action_list), key=action_list.count)
+        elif np.random.random() > self.epsilon:
+            actions, _ = self.Q_eval.forward(state,k)
             action = T.argmax(actions).item()
         else:
             action = np.random.choice(self.action_space)
@@ -113,23 +185,8 @@ class Agent:
         if self.iter_cntr % self.replace_target == 0:
             self.Q_target.load_state_dict(self.Q_eval.state_dict())
 
-    def choose_ucb_action(self,observation):     
-
-        state = T.tensor(observation).to(self.Q_eval.device)
-        Q = self.Q_eval.forward(state)
-
-
-
-        added = T.sqrt(T.div(math.log(self.iter_cntr+0.001),self.actionCounts))
-
-        actions = Q + 3.0*added
-        action = T.argmax(actions).item()
-        self.actionCounts[action]+=1
-
-        return action
 
     def learn(self):
-        print("LEARN")
         if self.mem_cntr < self.batch_size:
             return
 
@@ -147,12 +204,12 @@ class Agent:
         #        self.terminal_memory[batch]).to(self.Q_eval.device)
         
         samples = self.memory.sample(self.batch_size,self.beta)
-        print(samples[5])
         state_batch = T.tensor(samples[0]).to(self.Q_eval.device)
         new_state_batch = T.tensor(samples[3]).to(self.Q_eval.device)
         action_batch = samples[1]
         reward_batch = T.tensor(samples[2]).to(self.Q_eval.device)
         terminal_batch = T.tensor(samples[4]).to(self.Q_eval.device)
+        mask = T.tensor(samples[5]).to(self.Q_eval.device)
         weights = samples[6]
         batch_idxes = samples[7]
 
@@ -164,45 +221,41 @@ class Agent:
         q = T.zeros(self.batch_size)
         #print("Initialised q values: ", q)
 
+        q_pred_list = self.Q_eval.forward(new_state_batch,None) #[(action,q),...]
+        q_eval_list = self.Q_eval.forward(state_batch,None)
+        q_target_list = self.Q_target.forward(new_state_batch,None)
 
-        a_pred, v_pred = self.Q_eval.forward(new_state_batch)
-        a_eval, v_eval = self.Q_eval.forward(state_batch)
+        cnt_losses = []
+        for k in range(self.numHeads):
+            total_used = T.sum(mask[:,k])
 
-        q_pred = T.add(v_pred, (a_pred-a_pred.mean(dim=1, keepdim=True)))
-        q_eval = T.add(v_eval, (a_eval-a_eval.mean(dim=1, keepdim=True)))
+            if total_used > 0.0:
+                q_target = q_target_list[k][1]
+                q_pred = q_pred_list[k][1]
+                q_eval = q_eval_list[k][1]
+                
 
-        #q_pred = self.Q_eval.forward(new_state_batch).to(self.Q_eval.device)
-        #q_eval = self.Q_eval.forward(state_batch).to(self.Q_eval.device)
-        q_eval = T.gather(q_eval,1,T.tensor(action_batch,dtype=T.int64).view(-1,1))
-        #print("Qpred: ", q_pred)
-        #print("Qeval: ", q_eval)
-        #print(q_eval.size())
+                q_eval = T.gather(q_eval,1,T.tensor(action_batch,dtype=T.int64).view(-1,1))
 
-        #q_next = self.Q_next.forward(new_state_batch)
+                maxA = T.argmax(q_pred, dim=1).to(self.Q_eval.device)
+                maxA = maxA.view(-1,1)
+
+                q_target = T.gather(q_target,1,maxA)
+
+
+                q[T.logical_not(terminal_batch)] = reward_batch[T.logical_not(terminal_batch)] + self.gamma*q_target[T.logical_not(terminal_batch)].squeeze()
+                q[terminal_batch] = reward_batch[terminal_batch].float()
+
+                TD_error = q - q_eval.squeeze()
+                weighted_TD_errors = T.mul(TD_error, weights).to(self.Q_eval.device)
+                zero_tensor = T.zeros(weighted_TD_errors.shape).to(self.Q_eval.device)
         
-        maxA = T.argmax(q_pred, dim=1).to(self.Q_eval.device)
-        maxA = maxA.view(-1,1)
-        #print("Best actions: ", maxA)
+                partial_loss = self.Q_eval.loss(weighted_TD_errors, zero_tensor).to(self.Q_eval.device)
 
-        a_target, v_target = self.Q_target.forward(new_state_batch)
-        q_target = T.add(v_target, (a_target-a_target.mean(dim=1, keepdim=True)))
-        #print("Ungathers Qtarget: ", q_target)
-        q_target = T.gather(q_target,1,maxA)
-        #print("Gathered target: ", q_target)
-        #print(q_target[T.logical_not(terminal_batch)].squeeze().size())
-        #print(q[T.logical_not(terminal_batch)])
+                full_loss = mask[:,k]*partial_loss
+                cnt_losses.append(T.sum(full_loss/total_used))
 
-        #print("Rewards:", reward_batch)
-
-        q[T.logical_not(terminal_batch)] = reward_batch[T.logical_not(terminal_batch)] + self.gamma*q_target[T.logical_not(terminal_batch)].squeeze()
-        q[terminal_batch] = reward_batch[terminal_batch].float()
-        #print("q_values: ", q)
-        #q_target[maxA] = reward_batch + self.gamma*T.max(q_next, dim=1)
-        TD_error = q - q_eval.squeeze()
-        weighted_TD_errors = T.mul(TD_error, weights).to(self.Q_eval.device)
-        zero_tensor = T.zeros(weighted_TD_errors.shape).to(self.Q_eval.device)
-        
-        loss = self.Q_eval.loss(weighted_TD_errors, zero_tensor).to(self.Q_eval.device)
+        loss = sum(cnt_losses)/self.numHeads
         loss.backward()
         self.Q_eval.optimizer.step()
 
@@ -295,12 +348,12 @@ EPSILON = 1.0
 BATCHSIZE = 30
 
 INITIAL_BETA = 0.2
-RANDOM_RESET = True
+RANDOM_RESET = False
 
-NUM_HEADS = 4
+NUM_HEADS = 5
 BERNOULLI_PROB = 0.5
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA, NUM_HEADS,BERNOULLI_PROB,1000,reduce_eps=1000,annealBias=True)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA, NUM_HEADS,BERNOULLI_PROB,5000,reduce_eps=500,annealBias=True)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     done = False
@@ -320,8 +373,11 @@ print("Memory initilised")
 scores = []
 epsHistory = []
 numEpisodes = 500
+maxEpisodeLength = 10000
 
-while myAgent.epsilon > myAgent.eps_min :
+
+counter = 0
+while myAgent.epsilon > myAgent.eps_min:
     epsHistory.append(myAgent.epsilon)
     done = False
     if RANDOM_RESET:
@@ -331,10 +387,12 @@ while myAgent.epsilon > myAgent.eps_min :
 
     score = 0
 
+    k = random.randint(0,NUM_HEADS-1)
+
+    counter = 0 
     while not done:
         state = myFactory.getState()
-        #print(state)
-        action = myAgent.choose_action(state)
+        action = myAgent.choose_action(state,k)
         actionString = myFactory.possibleActions[action]
         nextState, reward, done = myFactory.step(actionString)
         score += reward
@@ -342,6 +400,9 @@ while myAgent.epsilon > myAgent.eps_min :
         myAgent.learn()
         #if score % 5000 == 0:
             #print(score)
+        counter +=1
+        if counter > maxEpisodeLength:
+            break
     print(score)
 
     scores.append(score)
@@ -356,7 +417,7 @@ myAgent.epsilon = 0
 score = 0
 while not done:
     state = myFactory.getState()
-    action = myAgent.choose_action(help.flatten_tuple(state))
+    action = myAgent.choose_action(help.flatten_tuple(state),None)
     actionString = myFactory.possibleActions[action]
     nextState, reward, done = myFactory.step(actionString)
     score += reward

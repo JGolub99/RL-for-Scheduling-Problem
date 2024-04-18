@@ -73,6 +73,8 @@ class Factory:
         self.deposit = deposit
         self.obstacles = listOfObstacles
 
+        self.movingObstacles = []
+
         self.stateGrid = np.zeros((2,self.width,self.height))
         self.stateGrid[0][self.deposit[0]][self.deposit[1]] = 4
         for obstacle in self.obstacles:
@@ -85,28 +87,36 @@ class Factory:
 
     def addAgent(self):
         positionX, positionY = self.agent.position
-        self.grid[positionX][positionY] = 1
+        load = self.agent.load
+        self.stateGrid[0][positionX][positionY] = 2
+        self.stateGrid[1][positionX][positionY] = load
     
     def removeAgent(self):
         positionX, positionY = self.agent.position
-        self.grid[positionX][positionY] = 0
+        self.stateGrid[0][positionX][positionY] = 0
+        self.stateGrid[1][positionX][positionY] = 0
 
     def addDeposit(self):
         positionX, positionY = self.deposit
-        self.grid[positionX][positionY] = 2
+        self.stateGrid[0][positionX][positionY] = 4
+        self.stateGrid[1][positionX][positionY] = 0
     
     def addObstacles(self):
         for obstacle in self.obstacles:
             positionX, positionY = obstacle
-            self.grid[positionX][positionY] = 3
+            self.stateGrid[0][positionX][positionY] = 1
+            self.stateGrid[1][positionX][positionY] = 0
+        for obstacle in self.movingObstacles:
+            positionX, positionY = obstacle
+            self.stateGrid[0][positionX][positionY] = 1
+            self.stateGrid[1][positionX][positionY] = 0            
 
     def addStations(self):
-        index = 4
         for station in self.stations:
-            station.id = index
             positionX, positionY = station.position
-            self.grid[positionX][positionY] = index
-            index += 1
+            load = station.load
+            self.stateGrid[0][positionX][positionY] = 3
+            self.stateGrid[1][positionX][positionY] = load
 
     def createStateSpace(self, agent):
 
@@ -115,10 +125,10 @@ class Factory:
         stationLoadVariations = help.generate_variations(stationMaxLoads)
 
         rowIndex = 0
-        for row in self.grid:
+        for row in self.stateGrid[0]:
             columnIndex = 0
             for column in row:
-                if column == 0 or column == 1:
+                if column == 0 or column == 2:
                     for posAgentLoad in range(agent.maximum + 1):
                         for option in stationLoadVariations:
                             state = tuple([(rowIndex,columnIndex),posAgentLoad] + option)
@@ -233,7 +243,7 @@ class Factory:
 
     def illegalState(self,newState):
 
-        if newState not in self.stateSpacePlus:
+        if (newState not in self.stateSpacePlus) or (newState[0] in self.movingObstacles):
             return True
         else:
             return False
@@ -261,10 +271,10 @@ class Factory:
         elif action == "Load" or action == "Unload":
             positionX = np.where(newState[0] == 2)[0].item()
             positionY = np.where(newState[0] == 2)[1].item()
-            if (self.grid[positionX+1][positionY] == 0 or self.grid[positionX+1][positionY] == 3) \
-                and (self.grid[positionX-1][positionY] == 0 or self.grid[positionX-1][positionY] == 3) \
-                and (self.grid[positionX][positionY+1] == 0 or self.grid[positionX][positionY+1] == 3) \
-                and (self.grid[positionX][positionY-1] == 0 or self.grid[positionX][positionY-1] == 3):
+            if (self.stateGrid[0][positionX+1][positionY] == 0 or self.stateGrid[0][positionX+1][positionY] == 1) \
+                and (self.stateGrid[0][positionX-1][positionY] == 0 or self.stateGrid[0][positionX-1][positionY] == 1) \
+                and (self.stateGrid[0][positionX][positionY+1] == 0 or self.stateGrid[0][positionX][positionY+1] == 1) \
+                and (self.stateGrid[0][positionX][positionY-1] == 0 or self.stateGrid[0][positionX][positionY-1] == 1):
                 reward = -5
             else:
                 reward = -1
@@ -292,7 +302,7 @@ class Factory:
         # In this function we need to rebuld the grid and initial state:
         self.agent = copy.deepcopy(self.initialAgent)
         self.stations = copy.deepcopy(self.initialStations)
-        self.grid = np.zeros((self.width,self.height))
+        self.stateGrid = np.zeros((2,self.width,self.height))
         self.addAgent()
         self.addDeposit()
         self.addObstacles()
@@ -312,7 +322,7 @@ class Factory:
         for station in self.stations:
             station.load = random.randint(0,station.maximum)
 
-        self.grid = np.zeros((self.width,self.height))
+        self.stateGrid = np.zeros((2,self.width,self.height))
         self.addAgent()
         self.addDeposit()
         self.addObstacles()
@@ -380,8 +390,76 @@ class Factory:
                             currentState[j+1]+=1
                             self.setState(tuple(currentState))
                             break
+    
+    def addMovingObstacle(self,obstaclePosition):
+        self.movingObstacles.append(obstaclePosition)
+        self.addObstacles()
 
+    def moveObstacle(self,index,direction):
+        obstaclePositionX, obstaclePositionY = self.movingObstacles[index]
+
+        if direction == "Up":
+            if self.stateGrid[0][obstaclePositionX-1][obstaclePositionY] == 0:
+                newObstaclePosition = (obstaclePositionX-1,obstaclePositionY)
+                self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+        elif direction == "Down":
+            if self.stateGrid[0][obstaclePositionX+1][obstaclePositionY] == 0:
+                newObstaclePosition = (obstaclePositionX+1,obstaclePositionY)
+                self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+        elif direction == "Right":
+            if self.stateGrid[0][obstaclePositionX][obstaclePositionY+1] == 0:
+                newObstaclePosition = (obstaclePositionX,obstaclePositionY+1)
+                self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+        elif direction == "Left":
+            if self.stateGrid[0][obstaclePositionX][obstaclePositionY-1] == 0:
+                newObstaclePosition = (obstaclePositionX,obstaclePositionY-1)
+                self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+        self.movingObstacles[index] = newObstaclePosition
+        self.stateGrid[0][newObstaclePosition[0]][newObstaclePosition[1]] = 1
+
+    def moveObstacleRandom(self,index):
+        obstaclePositionX, obstaclePositionY = self.movingObstacles[index]
         
+        directionPreferences = np.arange(0,4)
+        np.random.shuffle(directionPreferences)
+        for direction in directionPreferences:
+            if direction == 0:
+                if self.stateGrid[0][obstaclePositionX-1][obstaclePositionY] == 0:
+                    newObstaclePosition = (obstaclePositionX-1,obstaclePositionY)
+                    self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+                    break
+                else:
+                    pass
+            if direction == 1:
+                if self.stateGrid[0][obstaclePositionX+1][obstaclePositionY] == 0:
+                    newObstaclePosition = (obstaclePositionX+1,obstaclePositionY)
+                    self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+                    break
+                else:
+                    pass     
+            if direction == 2:       
+                if self.stateGrid[0][obstaclePositionX][obstaclePositionY+1] == 0:
+                    newObstaclePosition = (obstaclePositionX,obstaclePositionY+1)
+                    self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+                    break
+                else:
+                    pass
+            if direction == 3:
+                if self.stateGrid[0][obstaclePositionX][obstaclePositionY-1] == 0:
+                    newObstaclePosition = (obstaclePositionX,obstaclePositionY-1)
+                    self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+                    break
+                else:
+                    pass
+        
+        self.movingObstacles[index] = newObstaclePosition
+        self.stateGrid[0][newObstaclePosition[0]][newObstaclePosition[1]] = 1
+
+    def removeObstacle(self,index):
+        obstaclePositionX,obstaclePositionY = self.movingObstacles[index]
+        self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
+        self.movingObstacles.pop(index)
+
 
 # Instantiate the environment:
 myObstacles = [(3,2),
@@ -398,10 +476,35 @@ myAgent = Agent(1,2,(4,1))
 deposit = (4,3)
 myFactory = Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
+'''
 observation = myFactory.getState()
 print(observation)
-nextState, reward, done = myFactory.step('Right')
-print(nextState)
-myFactory.perturb([0.0,0.0,1.0])
-newobservation = myFactory.getState()
-print(newobservation)
+myFactory.addMovingObstacle((2,2))
+observation = myFactory.getState()
+print(observation)
+myFactory.moveObstacle(0,"Left")
+myFactory.moveObstacle(0,"Down")
+observation = myFactory.getState()
+print(observation)
+stepped = myFactory.step("Right")
+print(stepped)
+myFactory.removeObstacle(0)
+observation = myFactory.getState()
+print(observation)
+#nextState, reward, done = myFactory.step('Up')
+#print(nextState,reward)
+#nextState, reward, done = myFactory.step('Up')
+#print(nextState,reward)
+#nextState, reward, done = myFactory.step('Up')
+#print(nextState,reward)
+#nextState, reward, done = myFactory.step('Load')
+#print(nextState,reward)
+#myFactory.perturb([0.5,0.3,0.2])
+#newobservation = myFactory.getState()
+#print(newobservation)
+#myFactory.addMovingObstacle((1,1))
+#newobservation = myFactory.getState()
+#print(newobservation)
+#nextState, reward, done = myFactory.step('Unload')
+#print(reward)
+'''

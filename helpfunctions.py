@@ -379,3 +379,36 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._it_min[idx] = priority ** self._alpha
 
             self._max_priority = max(self._max_priority, priority)
+
+def elementwise_average(list_of_lists):
+    # Get the length of the lists
+    list_length = len(list_of_lists[0])
+    
+    # Initialize a list to store the averages
+    averages = [0] * list_length
+    
+    # Loop through each list in the input list of lists
+    for lst in list_of_lists:
+        # Add each element to the corresponding element in averages
+        averages = [avg + ele for avg, ele in zip(averages, lst)]
+    
+    # Calculate the average by dividing each element by the number of lists
+    averages = [avg / len(list_of_lists) for avg in averages]
+    
+    return averages
+
+def transpose(list_of_lists):
+    # Get the number of rows and columns
+    rows = len(list_of_lists)
+    cols = len(list_of_lists[0])
+    
+    # Initialize the transpose matrix with empty lists
+    transposed = [[] for _ in range(cols)]
+    
+    # Loop through each element of the input matrix
+    for i in range(rows):
+        for j in range(cols):
+            # Append the element to the corresponding list in the transpose matrix
+            transposed[j].append(list_of_lists[i][j])
+    
+    return transposed

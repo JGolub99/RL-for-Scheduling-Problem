@@ -166,18 +166,18 @@ class Agent:
 
     def choose_action(self, observation,k):
         state = T.tensor(observation).to(self.Q_eval.device)
-        if k == None:
+        if np.random.random() < self.epsilon:
+            action = np.random.choice(self.action_space)
+        elif k == None:
             actions = self.Q_eval.forward(state,k)
             action_list = []
             for head in actions:
                 option = T.argmax(head[0]).item()
                 action_list.append(option)
             action = max(set(action_list), key=action_list.count)
-        elif np.random.random() > self.epsilon:
+        else:
             actions, _ = self.Q_eval.forward(state,k)
             action = T.argmax(actions).item()
-        else:
-            action = np.random.choice(self.action_space)
 
         return action
     
@@ -273,7 +273,26 @@ class Agent:
         #self.epsilon = self.epsilon - self.eps_dec \
         #    if self.epsilon > self.eps_min else self.eps_min
 
-
+def performTestOne(myAgent,factories,optimals,thresh):
+    final_scores = []
+    old_epsilon = myAgent.epsilon
+    myAgent.epsilon = 0.1
+    for factory,optimal_score in zip(factories,optimals):
+        score = 0
+        done = False
+        factory.reset()
+        while (not done) and (abs(score)<thresh):
+            state = factory.getState()
+            action = myAgent.choose_action(help.flatten_tuple(state),None)
+            actionString = factory.possibleActions[action]
+            nextState, reward, done = factory.step(actionString)
+            score += reward
+            #myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)    
+            #print(actionString)
+        print("Final score: ",score)
+        final_scores.append(score)
+    myAgent.epsilon = old_epsilon
+    return final_scores
 '''
 # Instantiate the environment:
 myObstacles = [(7,3),(7,4),(7,5),
@@ -335,9 +354,35 @@ myObstacles = [(3,2),
 station1 = RL.Station(2,3,(1,2))
 station2 = RL.Station(1,1,(1,3))
 myStations = [station1,station2]
-myAgent = RL.Agent(1,2,(4,1))
+agent = RL.Agent(1,2,(4,1))
 deposit = (4,3)
-myFactory = RL.Factory(5,6,myObstacles,myStations,myAgent,deposit)
+myFactory = RL.Factory(5,6,myObstacles,myStations,agent,deposit)
+
+'''
+In this section of code we will instatiate the test environments:
+'''
+
+myFactory = RL.Factory(5,6,myObstacles,myStations,agent,deposit)
+myFactory2 = RL.Factory(5,6,myObstacles,myStations,RL.Agent(1,2,(1,1)),deposit)
+myFactory3 = RL.Factory(5,6,myObstacles,[RL.Station(3,3,(1,2)),RL.Station(1,1,(1,3))],RL.Agent(2,2,(4,1)),deposit)
+
+myObstacles2 = [(3,1),
+               (0,0),(0,1),(0,2),(0,3),(0,4),
+               (1,0),(1,4),
+               (2,0),(2,4),
+               (3,0),(3,4),
+               (4,0),(4,4),
+               (5,0),(5,1),(5,2),(5,3),(5,4)]
+
+myFactory4 = RL.Factory(5,6,myObstacles2,myStations,agent,deposit)
+myFactory5 = RL.Factory(5,6,myObstacles,[RL.Station(1,1,(1,1)),RL.Station(2,3,(1,2)),RL.Station(1,1,(1,3))],agent,deposit)
+
+factories = [myFactory,myFactory2,myFactory3,myFactory4,myFactory5]
+optimals = [-15,-14,-18,-13,-19]
+
+'''
+End of test environments
+'''
 
 actions = myFactory.possibleActions
 numActions = len(actions)
@@ -348,12 +393,12 @@ EPSILON = 1.0
 BATCHSIZE = 30
 
 INITIAL_BETA = 0.99
-RANDOM_RESET = False
+RANDOM_RESET = True
 
 NUM_HEADS = 5
 BERNOULLI_PROB = 0.5
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA, NUM_HEADS,BERNOULLI_PROB,5000,reduce_eps=500,annealBias=False)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA, NUM_HEADS,BERNOULLI_PROB,5000,reduce_eps=1000,annealBias=False)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     done = False
@@ -371,13 +416,14 @@ while myAgent.mem_cntr < myAgent.mem_size:
 print("Memory initilised")
 
 scores = []
+testScores = []
 epsHistory = []
-numEpisodes = 500
-maxEpisodeLength = 10000
+episodeNumber = 0
 
 
 counter = 0
 while myAgent.epsilon > myAgent.eps_min:
+    episodeNumber += 1
     epsHistory.append(myAgent.epsilon)
     done = False
     if RANDOM_RESET:
@@ -401,28 +447,38 @@ while myAgent.epsilon > myAgent.eps_min:
         #if score % 5000 == 0:
             #print(score)
         counter +=1
-        if counter > maxEpisodeLength:
-            break
-    print(score)
+    print("Episode {}: ".format(episodeNumber),score)
 
     scores.append(score)
 
+    if (episodeNumber%100) == 0:
+        temp_list = []
+        for _ in range(5):
+            finalScore = performTestOne(myAgent,factories,optimals,50000)
+            temp_list.append(finalScore)
+        averagedFinalScores = help.elementwise_average(temp_list)
+        testScores.append(averagedFinalScores)
+        print(averagedFinalScores)
+
+
+'''
 done = False
 if RANDOM_RESET:
     myFactory.reset2()
 else:
     myFactory.reset()
 print(myFactory.getState())
-myAgent.epsilon = 0
-score = 0
-while not done:
-    state = myFactory.getState()
-    action = myAgent.choose_action(help.flatten_tuple(state),None)
-    actionString = myFactory.possibleActions[action]
-    nextState, reward, done = myFactory.step(actionString)
-    score += reward
-    #myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)    
-    print(actionString)
-print("Final score: ",score)
+'''
+for x in testScores:
+    print(x)
+
+performances = help.transpose(testScores)
+plt.figure()
+for index,performance in enumerate(performances):
+    plt.plot(performance,label="Testcase {}".format(index))
+plt.legend()
+plt.show()
+
+plt.figure()
 plt.plot(scores)
 plt.show()

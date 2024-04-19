@@ -75,8 +75,8 @@ class Factory:
 
         self.movingObstacles = []
 
-        self.stateGrid = np.zeros((2,self.width,self.height))
-        self.stateGrid[0][self.deposit[0]][self.deposit[1]] = 4
+        self.stateGrid = np.zeros((5,self.width,self.height)).astype("i")
+        self.stateGrid[3][self.deposit[0]][self.deposit[1]] = 1
         for obstacle in self.obstacles:
             self.stateGrid[0][obstacle[0]][obstacle[1]] = 1
 
@@ -88,35 +88,35 @@ class Factory:
     def addAgent(self):
         positionX, positionY = self.agent.position
         load = self.agent.load
-        self.stateGrid[0][positionX][positionY] = 2
-        self.stateGrid[1][positionX][positionY] = load
+        self.stateGrid[1][positionX][positionY] = 1
+        self.stateGrid[4][positionX][positionY] = load
     
     def removeAgent(self):
         positionX, positionY = self.agent.position
-        self.stateGrid[0][positionX][positionY] = 0
         self.stateGrid[1][positionX][positionY] = 0
+        self.stateGrid[4][positionX][positionY] = 0
 
     def addDeposit(self):
         positionX, positionY = self.deposit
-        self.stateGrid[0][positionX][positionY] = 4
-        self.stateGrid[1][positionX][positionY] = 0
+        self.stateGrid[3][positionX][positionY] = 1
+        self.stateGrid[4][positionX][positionY] = 0
     
     def addObstacles(self):
         for obstacle in self.obstacles:
             positionX, positionY = obstacle
             self.stateGrid[0][positionX][positionY] = 1
-            self.stateGrid[1][positionX][positionY] = 0
+            self.stateGrid[4][positionX][positionY] = 0
         for obstacle in self.movingObstacles:
             positionX, positionY = obstacle
             self.stateGrid[0][positionX][positionY] = 1
-            self.stateGrid[1][positionX][positionY] = 0            
+            self.stateGrid[4][positionX][positionY] = 0            
 
     def addStations(self):
         for station in self.stations:
             positionX, positionY = station.position
             load = station.load
-            self.stateGrid[0][positionX][positionY] = 3
-            self.stateGrid[1][positionX][positionY] = load
+            self.stateGrid[2][positionX][positionY] = 1
+            self.stateGrid[4][positionX][positionY] = load
 
     def createStateSpace(self, agent):
 
@@ -125,10 +125,10 @@ class Factory:
         stationLoadVariations = help.generate_variations(stationMaxLoads)
 
         rowIndex = 0
-        for row in self.stateGrid[0]:
+        for row,row2,row3 in zip(self.stateGrid[0],self.stateGrid[2],self.stateGrid[3]):
             columnIndex = 0
-            for column in row:
-                if column == 0 or column == 2:
+            for column,column2,column3 in zip(row,row2,row3):
+                if column == 0 and column2 == 0 and column3 == 0:
                     for posAgentLoad in range(agent.maximum + 1):
                         for option in stationLoadVariations:
                             state = tuple([(rowIndex,columnIndex),posAgentLoad] + option)
@@ -140,7 +140,7 @@ class Factory:
             rowIndex+=1
         
     def isTerminalState(self,state):
-        return np.all(state[1] == 0)
+        return np.all(state[4] == 0)
 
     def getState(self):
         stationLoads = [stationLoad.load for stationLoad in self.stations]
@@ -269,12 +269,12 @@ class Factory:
         # to the agent:
 
         elif action == "Load" or action == "Unload":
-            positionX = np.where(newState[0] == 2)[0].item()
-            positionY = np.where(newState[0] == 2)[1].item()
-            if (self.stateGrid[0][positionX+1][positionY] == 0 or self.stateGrid[0][positionX+1][positionY] == 1) \
-                and (self.stateGrid[0][positionX-1][positionY] == 0 or self.stateGrid[0][positionX-1][positionY] == 1) \
-                and (self.stateGrid[0][positionX][positionY+1] == 0 or self.stateGrid[0][positionX][positionY+1] == 1) \
-                and (self.stateGrid[0][positionX][positionY-1] == 0 or self.stateGrid[0][positionX][positionY-1] == 1):
+            positionX = np.where(newState[1] == 1)[0].item()
+            positionY = np.where(newState[1] == 1)[1].item()
+            if (self.stateGrid[1][positionX+1][positionY] == 0 and self.stateGrid[2][positionX+1][positionY] == 0 and self.stateGrid[3][positionX+1][positionY] == 0) \
+                and (self.stateGrid[1][positionX-1][positionY] == 0 and self.stateGrid[2][positionX-1][positionY] == 0 and self.stateGrid[3][positionX-1][positionY] == 0) \
+                and (self.stateGrid[1][positionX][positionY+1] == 0 and self.stateGrid[2][positionX][positionY+1] == 0 and self.stateGrid[3][positionX][positionY+1] == 0) \
+                and (self.stateGrid[1][positionX][positionY-1] == 0 and self.stateGrid[2][positionX][positionY-1] == 0 and self.stateGrid[3][positionX][positionY-1] == 0):
                 reward = -5
             else:
                 reward = -1
@@ -288,13 +288,13 @@ class Factory:
         new_state = copy.copy(self.stateGrid)
         agentPositionX, agentPositionY = old_state[0]
         agentLoad = old_state[1]
-        new_state[0][agentPositionX][agentPositionY] = 2
-        new_state[1][agentPositionX][agentPositionY] = agentLoad
+        new_state[1][agentPositionX][agentPositionY] = 1
+        new_state[4][agentPositionX][agentPositionY] = agentLoad
         stationIndex = 2
         for station in self.stations:
             stationPositionX, stationPositionY = station.position
-            new_state[0][stationPositionX][stationPositionY] = 3
-            new_state[1][stationPositionX][stationPositionY] = old_state[stationIndex]
+            new_state[2][stationPositionX][stationPositionY] = 1
+            new_state[4][stationPositionX][stationPositionY] = old_state[stationIndex]
             stationIndex+=1
         return new_state
     
@@ -302,7 +302,7 @@ class Factory:
         # In this function we need to rebuld the grid and initial state:
         self.agent = copy.deepcopy(self.initialAgent)
         self.stations = copy.deepcopy(self.initialStations)
-        self.stateGrid = np.zeros((2,self.width,self.height))
+        self.stateGrid = np.zeros((5,self.width,self.height)).astype("i")
         self.addAgent()
         self.addDeposit()
         self.addObstacles()
@@ -322,7 +322,7 @@ class Factory:
         for station in self.stations:
             station.load = random.randint(0,station.maximum)
 
-        self.stateGrid = np.zeros((2,self.width,self.height))
+        self.stateGrid = np.zeros((5,self.width,self.height)).astype("i")
         self.addAgent()
         self.addDeposit()
         self.addObstacles()
@@ -478,21 +478,21 @@ myFactory = Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
 '''
 observation = myFactory.getState()
-print(observation)
+print("Observation: ",observation)
 myFactory.addMovingObstacle((2,2))
 observation = myFactory.getState()
-print(observation)
+print("Observation: ",observation)
 myFactory.moveObstacle(0,"Left")
 myFactory.moveObstacle(0,"Down")
 observation = myFactory.getState()
-print(observation)
+print("Observation: ",observation)
 stepped = myFactory.step("Right")
 print(stepped)
 myFactory.removeObstacle(0)
 observation = myFactory.getState()
 print(observation)
-#nextState, reward, done = myFactory.step('Up')
-#print(nextState,reward)
+nextState, reward, done = myFactory.step('Load')
+print(nextState,reward)
 #nextState, reward, done = myFactory.step('Up')
 #print(nextState,reward)
 #nextState, reward, done = myFactory.step('Up')

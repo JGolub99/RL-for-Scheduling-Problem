@@ -20,7 +20,7 @@ class DuelingDeepQNetwork(nn.Module):
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
         self.n_actions = n_actions
-        self.conv1 = nn.Conv2d(2,8,3)
+        self.conv1 = nn.Conv2d(5,8,3)
         self.conv2 = nn.Conv2d(8,16,3)
         self.fc1 = nn.Linear(16*(height-4)*(width-4), self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
@@ -219,7 +219,7 @@ class Agent:
 def performTestOne(myAgent,factories,optimals,thresh):
     final_scores = []
     old_epsilon = myAgent.epsilon
-    myAgent.epsilon = 0.1
+    myAgent.epsilon = 0.02
     for factory,optimal_score in zip(factories,optimals):
         score = 0
         done = False
@@ -387,7 +387,7 @@ while myAgent.epsilon > myAgent.eps_min :
 
     scores.append(score)
 
-    if (episodeNumber%100) == 0:
+    if (episodeNumber%500) == 0:
         temp_list = []
         for _ in range(5):
             finalScore = performTestOne(myAgent,factories,optimals,50000)
@@ -412,9 +412,30 @@ performances = help.transpose(testScores)
 plt.figure()
 for index,performance in enumerate(performances):
     plt.plot(performance,label="Testcase {}".format(index))
+
+
+plt.xlabel("Training episodes / 500")
+plt.ylabel("Reward")
+plt.title("Rewards for different initial states throughout the agen trianing process")
 plt.legend()
 plt.show()
 
+def averageFilter(myList,windowSize):
+    listLength = len(myList)
+    averagedList = []
+    j=0
+    for i in range(windowSize,listLength):
+        partialSum = sum(myList[j:i])
+        partialAverage = partialSum/windowSize
+        averagedList.append(partialAverage)
+        j+=1
+    return averagedList
+
+averaged_scores = averageFilter(scores,30)
+
 plt.figure()
-plt.plot(scores)
+plt.plot(averaged_scores)
+plt.title("Training performance")
+plt.xlabel("Training episodes")
+plt.ylabel("Reward")
 plt.show()

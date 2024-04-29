@@ -232,10 +232,46 @@ def performTestOne(myAgent,factories,optimals,thresh):
             score += reward
             #myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)    
             #print(actionString)
-        print("Final score: ",score)
-        final_scores.append(score)
+        print("Empirical Regret: ",abs(score-optimal_score))
+        final_scores.append(abs(score-optimal_score))
     myAgent.epsilon = old_epsilon
     return final_scores
+
+def performTestTwo(myAgent,factory,probabilities,freq,thresh):
+
+    old_epsilon = myAgent.epsilon
+    myAgent.epsilon = 0.02
+    score = 0
+    done = False
+    factory.reset()
+    while (not done) and (abs(score)<thresh):
+        state = factory.getState()
+        action = myAgent.choose_action(help.flatten_tuple(state))
+        actionString = factory.possibleActions[action]
+        nextState, reward, done = factory.step(actionString)
+        score += reward
+    optimalScore = score
+
+    scores = []
+
+    for probability in probabilities:
+        score = 0
+        done = False
+        factory.reset()
+        step = 0
+        while (not done) and (abs(score)<thresh):
+            step +=1
+            state = factory.getState()
+            action = myAgent.choose_action(help.flatten_tuple(state))
+            actionString = factory.possibleActions[action]
+            nextState, reward, done = factory.step(actionString)
+            score += reward            
+            if step % freq == 0:
+                factory.perturb(probability)
+        scores.append(abs(score-optimalScore))
+    
+    myAgent.epsilon = old_epsilon
+    return scores
 
 '''
 # Instantiate the environment:
@@ -339,7 +375,7 @@ BATCHSIZE = 30
 INITIAL_BETA = 0.99
 RANDOM_RESET = True
 
-myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA,1000,reduce_eps=1000,annealBias=False)
+myAgent = Agent(GAMMA,EPSILON,ALPHA,5,6,BATCHSIZE,numActions,INITIAL_BETA,5000,reduce_eps=1000,annealBias=False)
 
 while myAgent.mem_cntr < myAgent.mem_size:
     done = False
@@ -358,6 +394,7 @@ print("Memory initilised")
 
 scores = []
 testScores = []
+testScores2 = []
 epsHistory = []
 episodeNumber = 0
 
@@ -389,12 +426,18 @@ while myAgent.epsilon > myAgent.eps_min :
 
     if (episodeNumber%500) == 0:
         temp_list = []
+        temp_list2 = []
         for _ in range(5):
             finalScore = performTestOne(myAgent,factories,optimals,50000)
             temp_list.append(finalScore)
+            finalScore2 = performTestTwo(myAgent,myFactory,[[1.0,0.0,0.0],[0.6,0.4,0.0],[0.6,0.3,0.1]],5,50000)
+            temp_list2.append(finalScore2)
         averagedFinalScores = help.elementwise_average(temp_list)
+        averagedFinalScores2 = help.elementwise_average(temp_list2)
         testScores.append(averagedFinalScores)
+        testScores2.append(averagedFinalScores2)
         print(averagedFinalScores)
+        print(averagedFinalScores2)
 
 
 '''
@@ -417,6 +460,18 @@ for index,performance in enumerate(performances):
 plt.xlabel("Training episodes / 500")
 plt.ylabel("Reward")
 plt.title("Rewards for different initial states throughout the agen trianing process")
+plt.legend()
+plt.show()
+
+performances2 = help.transpose(testScores2)
+plt.figure()
+for index,performance in enumerate(performances2):
+    plt.plot(performance,label="Testcase {}".format(index))
+
+
+plt.xlabel("Training episodes / 500")
+plt.ylabel("Deviation from optimal policy return")
+plt.title("Sensitivity to varying levels of disturbance")
 plt.legend()
 plt.show()
 

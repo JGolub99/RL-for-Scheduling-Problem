@@ -73,7 +73,7 @@ class Factory:
         self.deposit = deposit
         self.obstacles = listOfObstacles
 
-        self.movingObstacles = []
+        self.movingObstacles = {}
 
         self.stateGrid = np.zeros((5,self.width,self.height)).astype("i")
         self.stateGrid[3][self.deposit[0]][self.deposit[1]] = 1
@@ -106,10 +106,11 @@ class Factory:
             positionX, positionY = obstacle
             self.stateGrid[0][positionX][positionY] = 1
             self.stateGrid[4][positionX][positionY] = 0
-        for obstacle in self.movingObstacles:
-            positionX, positionY = obstacle
-            self.stateGrid[0][positionX][positionY] = 1
-            self.stateGrid[4][positionX][positionY] = 0            
+        for obstacle in self.movingObstacles.values():
+            if obstacle != None:
+                positionX, positionY = obstacle
+                self.stateGrid[0][positionX][positionY] = 1
+                self.stateGrid[4][positionX][positionY] = 0            
 
     def addStations(self):
         for station in self.stations:
@@ -243,13 +244,24 @@ class Factory:
 
     def illegalState(self,newState):
 
-        if (newState not in self.stateSpacePlus) or (newState[0] in self.movingObstacles):
+        if (newState not in self.stateSpacePlus) or (newState[0] in self.movingObstacles.values()):
+            return True
+        else:
+            return False
+        
+    def hitMovingObstacle(self,newState):
+        if newState[0] in self.movingObstacles.values():
             return True
         else:
             return False
 
     def step(self, action):
         trialState = self.action(action)
+        HIT_MOVING_OBSTACLE = False
+
+        if self.hitMovingObstacle(trialState):
+            HIT_MOVING_OBSTACLE = True
+
         if not self.illegalState(trialState):
             self.setState(trialState)
             ILLEGAL = False
@@ -282,7 +294,7 @@ class Factory:
         else:
             reward = -1
 
-        return newState, reward, self.isTerminalState(newState) 
+        return newState, reward, self.isTerminalState(newState), HIT_MOVING_OBSTACLE 
     
     def convert_state(self,old_state):
         new_state = copy.copy(self.stateGrid)
@@ -303,6 +315,7 @@ class Factory:
         self.agent = copy.deepcopy(self.initialAgent)
         self.stations = copy.deepcopy(self.initialStations)
         self.stateGrid = np.zeros((5,self.width,self.height)).astype("i")
+        self.movingObstacles = {}
         self.addAgent()
         self.addDeposit()
         self.addObstacles()
@@ -312,6 +325,7 @@ class Factory:
         # In this function we need to rebuild the grid and initial state, however it will be a random legal one:
         self.agent = copy.deepcopy(self.initialAgent)
         self.agent.load = random.randint(0,self.agent.maximum)
+        self.movingObstacles = {}
         possiblePos = [(x, y) for x in range(self.width) for y in range(self.height)]
         Pos = [x for x in possiblePos if x not in self.obstacles]
 
@@ -392,7 +406,8 @@ class Factory:
                             break
     
     def addMovingObstacle(self,obstaclePosition):
-        self.movingObstacles.append(obstaclePosition)
+        length = len(self.movingObstacles)
+        self.movingObstacles[length] = obstaclePosition
         self.addObstacles()
 
     def moveObstacle(self,index,direction):
@@ -458,7 +473,7 @@ class Factory:
     def removeObstacle(self,index):
         obstaclePositionX,obstaclePositionY = self.movingObstacles[index]
         self.stateGrid[0][obstaclePositionX][obstaclePositionY] = 0
-        self.movingObstacles.pop(index)
+        self.movingObstacles[index] = None
 
 
 # Instantiate the environment:
@@ -476,7 +491,7 @@ myAgent = Agent(1,2,(4,1))
 deposit = (4,3)
 myFactory = Factory(5,6,myObstacles,myStations,myAgent,deposit)
 
-'''
+
 observation = myFactory.getState()
 print("Observation: ",observation)
 myFactory.addMovingObstacle((2,2))
@@ -491,7 +506,7 @@ print(stepped)
 myFactory.removeObstacle(0)
 observation = myFactory.getState()
 print(observation)
-nextState, reward, done = myFactory.step('Load')
+nextState, reward, done, _ = myFactory.step('Load')
 print(nextState,reward)
 #nextState, reward, done = myFactory.step('Up')
 #print(nextState,reward)
@@ -507,4 +522,3 @@ print(nextState,reward)
 #print(newobservation)
 #nextState, reward, done = myFactory.step('Unload')
 #print(reward)
-'''

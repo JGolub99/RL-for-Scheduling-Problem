@@ -10,6 +10,8 @@ import utils
 import Rlclasses2 as RL
 import helpfunctions as help
 
+import movingObstacleSchedule as mo
+
 class DuelingDeepQNetwork(nn.Module):
     def __init__(self, lr, width, height, fc1_dims, fc2_dims,
                  n_actions):
@@ -228,7 +230,7 @@ def performTestOne(myAgent,factories,optimals,thresh):
             state = factory.getState()
             action = myAgent.choose_action(help.flatten_tuple(state))
             actionString = factory.possibleActions[action]
-            nextState, reward, done = factory.step(actionString)
+            nextState, reward, done, _ = factory.step(actionString)
             score += reward
             #myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)    
             #print(actionString)
@@ -248,7 +250,7 @@ def performTestTwo(myAgent,factory,probabilities,freq,thresh):
         state = factory.getState()
         action = myAgent.choose_action(help.flatten_tuple(state))
         actionString = factory.possibleActions[action]
-        nextState, reward, done = factory.step(actionString)
+        nextState, reward, done, _ = factory.step(actionString)
         score += reward
     optimalScore = score
 
@@ -264,7 +266,7 @@ def performTestTwo(myAgent,factory,probabilities,freq,thresh):
             state = factory.getState()
             action = myAgent.choose_action(help.flatten_tuple(state))
             actionString = factory.possibleActions[action]
-            nextState, reward, done = factory.step(actionString)
+            nextState, reward, done, _ = factory.step(actionString)
             score += reward            
             if step % freq == 0:
                 factory.perturb(probability)
@@ -273,6 +275,41 @@ def performTestTwo(myAgent,factory,probabilities,freq,thresh):
     myAgent.epsilon = old_epsilon
     return scores
 
+
+def performTestThree(myAgent,factory,schedules,thresh):
+
+    #schedules is a list of MovingObstacle schedules
+    final_scores = []
+    old_epsilon = myAgent.epsilon
+    myAgent.epsilon = 0.02
+    for schedule in schedules:
+        schedule.reset()
+        crashes = 0
+        score = 0
+        done = False
+        factory.reset()
+        while (not done) and (abs(score)<thresh):
+            state = factory.getState()
+            action = myAgent.choose_action(help.flatten_tuple(state))
+            actionString = factory.possibleActions[action]
+            nextState, reward, done, crashed = factory.step(actionString)
+            score += reward
+            if crashed:
+                crashes +=1
+            moves = schedule.clock()
+            if len(moves)!=0:
+                for obstacle,move in moves:
+                    if type(move) == tuple:
+                        factory.addMovingObstacle(move)
+                    elif move == "Remove":
+                        factory.removeObstacle(obstacle)
+                    else:
+                        factory.moveObstacle(obstacle,move)
+        print("Number of crashes: ", crashes)
+        final_scores.append(crashes)
+
+    myAgent.epsilon = old_epsilon
+    return final_scores
 '''
 # Instantiate the environment:
 myObstacles = [(7,3),(7,4),(7,5),
@@ -360,6 +397,11 @@ myFactory5 = RL.Factory(5,6,myObstacles,[RL.Station(1,1,(1,1)),RL.Station(2,3,(1
 factories = [myFactory,myFactory2,myFactory3,myFactory4,myFactory5]
 optimals = [-15,-14,-18,-13,-19]
 
+schedule1 = mo.ObstacleSchedule([{1:(2,3),2:"Left",3:"Left",4:"Up",5:"Remove"},
+                                 {1:(4,2),5:"Left",6:"Remove"}])
+schedule2 = mo.ObstacleSchedule([{1:(2,3),2:"Left",3:"Left",4:"Up",5:"Remove"}])
+schedules = [schedule1,schedule2]
+
 '''
 End of test environments
 '''
@@ -382,7 +424,7 @@ while myAgent.mem_cntr < myAgent.mem_size:
     while not done:
         action = myFactory.randomAction()
         currentState = myFactory.getState()
-        nextState, reward, done = myFactory.step(action)
+        nextState, reward, done, _ = myFactory.step(action)
         if done:
             print("Terminated")
         myAgent.store_transition(currentState,help.get_index(action,myFactory.possibleActions),reward,nextState,done)
@@ -395,6 +437,7 @@ print("Memory initilised")
 scores = []
 testScores = []
 testScores2 = []
+testScores3 = []
 epsHistory = []
 episodeNumber = 0
 
@@ -414,7 +457,7 @@ while myAgent.epsilon > myAgent.eps_min :
         #print(state)
         action = myAgent.choose_action(state)
         actionString = myFactory.possibleActions[action]
-        nextState, reward, done = myFactory.step(actionString)
+        nextState, reward, done, _ = myFactory.step(actionString)
         score += reward
         myAgent.store_transition(state,action,reward,nextState,done)
         myAgent.learn()
@@ -424,20 +467,26 @@ while myAgent.epsilon > myAgent.eps_min :
 
     scores.append(score)
 
-    if (episodeNumber%500) == 0:
+    if (episodeNumber%300) == 0:
         temp_list = []
         temp_list2 = []
+        temp_list3 = []
         for _ in range(5):
             finalScore = performTestOne(myAgent,factories,optimals,50000)
             temp_list.append(finalScore)
             finalScore2 = performTestTwo(myAgent,myFactory,[[1.0,0.0,0.0],[0.6,0.4,0.0],[0.6,0.3,0.1]],5,50000)
             temp_list2.append(finalScore2)
+            finalScore3 = performTestThree(myAgent,myFactory,schedules,50000)
+            temp_list3.append(finalScore3)
         averagedFinalScores = help.elementwise_average(temp_list)
         averagedFinalScores2 = help.elementwise_average(temp_list2)
+        averagedFinalScores3 = help.elementwise_average(temp_list3)
         testScores.append(averagedFinalScores)
         testScores2.append(averagedFinalScores2)
+        testScores3.append(averagedFinalScores3)
         print(averagedFinalScores)
         print(averagedFinalScores2)
+        print(averagedFinalScores3)
 
 
 '''

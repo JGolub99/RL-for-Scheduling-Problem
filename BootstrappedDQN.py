@@ -21,7 +21,7 @@ class DuelingDeepQNetwork(nn.Module):
         self.fc1_dims = fc1_dims
         self.fc2_dims = fc2_dims
         self.n_actions = n_actions
-        self.conv1 = nn.Conv2d(2,8,3)
+        self.conv1 = nn.Conv2d(5,8,3)
         self.conv2 = nn.Conv2d(8,16,3)
         self.fc1 = nn.Linear(16*(height-4)*(width-4), self.fc1_dims)
         self.fc2 = nn.Linear(self.fc1_dims, self.fc2_dims)
@@ -52,7 +52,7 @@ class SharedNet(nn.Module):
         self.height = height
         self.fc1_dims = fc1_dims
 
-        self.conv1 = nn.Conv2d(2,8,3)
+        self.conv1 = nn.Conv2d(5,8,3)
         self.conv2 = nn.Conv2d(8,16,3)
         self.fc1 = nn.Linear(16*(height-4)*(width-4), self.fc1_dims)
 
@@ -285,7 +285,7 @@ def performTestOne(myAgent,factories,optimals,thresh):
             state = factory.getState()
             action = myAgent.choose_action(help.flatten_tuple(state),None)
             actionString = factory.possibleActions[action]
-            nextState, reward, done = factory.step(actionString)
+            nextState, reward, done, _ = factory.step(actionString)
             score += reward
             #myAgent.store_transition(help.flatten_tuple(state),action,reward,help.flatten_tuple(nextState),done)    
             #print(actionString)
@@ -405,7 +405,7 @@ while myAgent.mem_cntr < myAgent.mem_size:
     while not done:
         action = myFactory.randomAction()
         currentState = myFactory.getState()
-        nextState, reward, done = myFactory.step(action)
+        nextState, reward, done, _ = myFactory.step(action)
         if done:
             print("Terminated")
         myAgent.store_transition(currentState,help.get_index(action,myFactory.possibleActions),reward,nextState,done)
@@ -440,7 +440,7 @@ while myAgent.epsilon > myAgent.eps_min:
         state = myFactory.getState()
         action = myAgent.choose_action(state,k)
         actionString = myFactory.possibleActions[action]
-        nextState, reward, done = myFactory.step(actionString)
+        nextState, reward, done, _ = myFactory.step(actionString)
         score += reward
         myAgent.store_transition(state,action,reward,nextState,done)
         myAgent.learn()

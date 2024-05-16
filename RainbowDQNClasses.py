@@ -96,7 +96,7 @@ class Agent:
 
         self.mem_cntr += 1
 
-    def choose_action(self, observation):
+    def choose_action(self, observation, k = None):
         if np.random.random() > self.epsilon:
             state = T.tensor(observation).to(self.Q_eval.device)
             actions, values = self.Q_eval.forward(state)

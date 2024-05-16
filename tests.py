@@ -1,3 +1,5 @@
+import helpfunctions as help
+
 def performTestOne(myAgent,factories,optimals,thresh):
     final_scores = []
     old_epsilon = myAgent.epsilon
@@ -8,7 +10,7 @@ def performTestOne(myAgent,factories,optimals,thresh):
         factory.reset()
         while (not done) and (abs(score)<thresh):
             state = factory.getState()
-            action = myAgent.choose_action(help.flatten_tuple(state))
+            action = myAgent.choose_action(help.flatten_tuple(state),None)
             actionString = factory.possibleActions[action]
             nextState, reward, done, _ = factory.step(actionString)
             score += reward
@@ -28,7 +30,7 @@ def performTestTwo(myAgent,factory,probabilities,freq,thresh):
     factory.reset()
     while (not done) and (abs(score)<thresh):
         state = factory.getState()
-        action = myAgent.choose_action(help.flatten_tuple(state))
+        action = myAgent.choose_action(help.flatten_tuple(state),None)
         actionString = factory.possibleActions[action]
         nextState, reward, done, _ = factory.step(actionString)
         score += reward
@@ -44,7 +46,7 @@ def performTestTwo(myAgent,factory,probabilities,freq,thresh):
         while (not done) and (abs(score)<thresh):
             step +=1
             state = factory.getState()
-            action = myAgent.choose_action(help.flatten_tuple(state))
+            action = myAgent.choose_action(help.flatten_tuple(state),None)
             actionString = factory.possibleActions[action]
             nextState, reward, done, _ = factory.step(actionString)
             score += reward            
@@ -69,7 +71,7 @@ def performTestThree(myAgent,factory,schedules,thresh):
         factory.reset()
         while (not done) and (abs(score)<thresh):
             state = factory.getState()
-            action = myAgent.choose_action(help.flatten_tuple(state))
+            action = myAgent.choose_action(help.flatten_tuple(state),None)
             actionString = factory.possibleActions[action]
             nextState, reward, done, crashed = factory.step(actionString)
             score += reward
@@ -80,6 +82,8 @@ def performTestThree(myAgent,factory,schedules,thresh):
                 for obstacle,move in moves:
                     if type(move) == tuple:
                         factory.addMovingObstacle(move)
+                    elif move == "Random":
+                        factory.moveObstacleRandom(obstacle)
                     elif move == "Remove":
                         factory.removeObstacle(obstacle)
                     else:
